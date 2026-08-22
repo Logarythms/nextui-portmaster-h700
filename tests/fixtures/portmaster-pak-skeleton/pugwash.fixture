@@ -1,0 +1,17 @@
+# SYNTHETIC fixture — NOT the full real pugwash (the real 2.13.0 file is
+# 100KB+). This exists only so the unit tests have the exact anchor line
+# this repo's edit_portmaster_pugwash (build/build-pak.sh) contracts on, in
+# realistic context (a do_draw method with the 12-space
+# `if not self.updated:` guard it sed-replaces). The real file's anchor is
+# verified separately by hands-on hardware-gate testing, not by this fixture.
+import os
+
+
+class Screen:
+    def do_draw(self):
+        if not self.in_screenshot:
+            if not self.updated:
+                return
+
+            if self.draw_counter > 30:
+                return

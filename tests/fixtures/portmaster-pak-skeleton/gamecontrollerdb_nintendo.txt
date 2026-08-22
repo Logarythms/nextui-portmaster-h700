@@ -1,0 +1,2 @@
+# synthetic controller db fixture
+03000000aabbccdd,Dummy Pad,a:b1,platform:Linux,

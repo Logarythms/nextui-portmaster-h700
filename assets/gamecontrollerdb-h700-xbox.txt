@@ -1,0 +1,8 @@
+# RG SP (h700 NextUI) SDL controller mapping — xbox layout.
+# MEASURED ON-DEVICE at the hardware gate: GUID from the pugwash log, button
+# indices via the gt-input-remap.so jbtn trace (never derived from evtest —
+# a vanilla-SDL derivation from evtest keycodes gave a different, wrong
+# table). One SDL mapping line per row:
+#   <guid>,<name>,a:bN,b:bN,...,platform:Linux,
+# Header-only until the gate fills it; staging appends data lines verbatim.
+19000000010000000100000000010000,RG SP Gamepad,a:b4,b:b3,x:b5,y:b6,back:b9,start:b10,guide:b11,leftshoulder:b7,rightshoulder:b8,lefttrigger:b12,righttrigger:b13,dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,platform:Linux,

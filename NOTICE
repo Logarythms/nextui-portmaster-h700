@@ -1,0 +1,19 @@
+nextui-portmaster-h700
+======================
+
+This project is an h700 (Anbernic RG SP / NextUI) repackaging recipe for
+PortMaster. The recipe and the h700 compatibility patches in this repository
+are licensed under the MIT License (see LICENSE).
+
+At build time the recipe downloads the following upstream components from their
+own release/distribution channels. They are NOT redistributed by this
+repository and remain under their respective licenses:
+
+- ben16w/minui-portmaster 2.13.0  (MIT)   https://github.com/ben16w/minui-portmaster
+- PortMaster                       https://portmaster.games/
+- josegonzalez/minui-presenter     (MIT)  https://github.com/josegonzalez/minui-presenter
+- Debian bullseye shared libraries (LGPL/BSD/zlib/etc.), via deb.debian.org
+- LÖVE 11.5 runtime (zlib), bundled by minui-portmaster
+
+Prebuilt PortMaster.pak release artifacts bundle the above upstream binaries
+and preserve their in-pak LICENSE files.

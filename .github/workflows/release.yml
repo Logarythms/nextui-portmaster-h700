@@ -1,0 +1,19 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: make test
+      - name: Build pak
+        run: make pak
+      - name: Attach pak to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Emus/h700/PORTS.pak.zip
