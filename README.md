@@ -45,6 +45,8 @@ Confirmed working out of the box on the RG SP:
 - [2048 Plus](https://portmaster.games/detail.html?name=2048plus) (the *Plus* version — **not** the regular 2048)
 - [Apotris](https://portmaster.games/detail.html?name=apotris)
 - [Balatro](https://portmaster.games/detail.html?name=balatro)
+- [Cave Story (Evo)](https://portmaster.games/detail.html?name=cave.story-evo) (the *Evo* version — **not** "Cave Story lr", which can't run here)
+- [Celeste](https://portmaster.games/detail.html?name=celeste)
 - [Deltarune](https://portmaster.games/detail.html?name=deltarune)
 - [Downwell](https://portmaster.games/detail.html?name=downwell)
 - [Tunics!](https://portmaster.games/detail.html?name=tunics_pm) (via the built-in input translator — automatic)
