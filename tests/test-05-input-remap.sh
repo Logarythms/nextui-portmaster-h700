@@ -38,6 +38,10 @@ assert_contains "$work/launch.sh" 'grep -Fxq "$ROM_NAME" "$PAK_DIR/files/gt-rema
 assert_contains "$work/launch.sh" 'grep -Fxq "$ROM_NAME" "$USERDATA_PATH/PORTS-portmaster/use-remap-ports"'
 # shellcheck disable=SC2016
 assert_contains "$work/launch.sh" 'export LD_PRELOAD="$PAK_DIR/lib/gt-input-remap.so${LD_PRELOAD:+:$LD_PRELOAD}"'
+# F26: the hook hands the shim the port's own gptk mapping for keyboard
+# synthesis (gptokeyb's uinput keyboard never reaches SDL apps on NextUI)
+# shellcheck disable=SC2016
+assert_contains "$work/launch.sh" 'export GT_REMAP_GPTK="$gt_gptk"'
 # placement: inside run_port, immediately guarding the port exec — after the
 # controller-layout selection, before the bash invocation of the port script
 layout_nintendo_line=$(grep -n 'set_controller_layout nintendo' "$work/launch.sh" | head -1 | cut -d: -f1)

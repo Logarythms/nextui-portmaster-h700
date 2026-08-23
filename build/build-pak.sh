@@ -423,6 +423,13 @@ edit_portmaster_launch() { # $1=launch.sh path
       print "        || grep -Fxq \"$ROM_NAME\" \"$USERDATA_PATH/PORTS-portmaster/use-remap-ports\" 2>/dev/null; }; then"
       print "        echo \"Preloading gt-input-remap.so for $ROM_NAME\""
       print "        export LD_PRELOAD=\"$PAK_DIR/lib/gt-input-remap.so${LD_PRELOAD:+:$LD_PRELOAD}\""
+      print "        # F26: hand the shim the port'\''s own gptk mapping so it can synthesize"
+      print "        # keyboard events at the SDL layer (gptokeyb'\''s uinput keyboard never"
+      print "        # reaches SDL apps on NextUI). First .gptk in GAMEDIR wins."
+      print "        for gt_gptk in \"$GAMEDIR\"/*.gptk; do"
+      print "            [ -f \"$gt_gptk\" ] && export GT_REMAP_GPTK=\"$gt_gptk\""
+      print "            break"
+      print "        done"
       print "    fi"
       print ""
       print $0
