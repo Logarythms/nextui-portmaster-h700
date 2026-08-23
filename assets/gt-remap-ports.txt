@@ -1,0 +1,7 @@
+# gt-remap-ports.txt — launcher filenames (one per line, exact) of ports the
+# pak preloads gt-input-remap.so for (F25). These ports read raw SDL joystick
+# events, whose button indices sit +3 off the expected layout on NextUI-h700
+# (see assets/gt-input-remap.c for the measured table). Users can extend this
+# without rebuilding via a `use-remap-ports` file in the pak's userdata dir.
+# Lines starting with # never match a launcher filename and act as comments.
+Tunics!.sh

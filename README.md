@@ -66,7 +66,10 @@ The input-remap shim ships prebuilt in `assets/`; rebuilding it (`make shim`) ne
 
 ## Input-remap shim
 
-Off by default. Some ports read raw controller indices and need them corrected — enabling the shim fixes those, but can break ports that were already fine. To turn it on, create an empty file named `use-remap` in the pak's userdata directory; delete it to turn it back off.
+Some ports read raw controller indices and need them corrected — the bundled shim fixes those. It is applied **per port**, never globally, because ports that already get correct input (the GameController tier) must stay untouched.
+
+- **Ports (per-port, some enabled by default):** the pak ships a default list at `files/gt-remap-ports.txt` inside the pak (currently: Tunics!). To enable the shim for another port without rebuilding, create a file named `use-remap-ports` in the pak's userdata directory (`.userdata/<platform>/PORTS-portmaster/`) containing that port's launcher filename exactly as it appears in the Roms folder (e.g. `Some Game.sh`), one per line. Remove the line to turn it back off. If that makes a broken port playable for you, please open an issue so it can join the shipped default list.
+- **PortMaster GUI:** off by default and normally not needed (the GUI has its own mapping fix). To force it, create an empty file named `use-remap` in the same userdata directory; delete it to turn it back off.
 
 ## Credits & license
 

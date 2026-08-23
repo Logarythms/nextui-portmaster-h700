@@ -402,6 +402,35 @@ edit_portmaster_launch() { # $1=launch.sh path
     }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-port-remap: F25 — preload the SDL joystick index-remap shim into
+  # ports that read raw joystick events (h700 button indices sit +3 off the
+  # layout ports expect; measured table in assets/gt-input-remap.c). The
+  # README documented the shim as a port-level fix since v0.1.0, but only
+  # run_portmaster_gui ever honored the flag — run_port had no preload path
+  # at all (doc/code mismatch found while fixing Tunics!, whose Solarus
+  # engine reads raw joystick events: it launched fine and ignored every
+  # button, hardware-diagnosed 2026-08-23). Enabled per port: launcher
+  # filenames listed in files/gt-remap-ports.txt (pak-shipped defaults) or
+  # in the user's $USERDATA_PATH/PORTS-portmaster/use-remap-ports (one name
+  # per line, no rebuild needed). NOT blanket-enabled: GameController-tier
+  # ports get correct input natively and must stay untouched.
+  if ! grep -q 'gt-h700-port-remap' "$f"; then
+    awk '$0 == "    \"$PAK_DIR/bin/bash\" \"$ROM_PATH\"" {
+      print "    # gt-h700-port-remap: preload the SDL joystick index-remap shim for ports"
+      print "    # listed in files/gt-remap-ports.txt (pak defaults) or the user'\''s"
+      print "    # use-remap-ports file — raw-joystick-event ports need it on h700."
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && { grep -Fxq \"$ROM_NAME\" \"$PAK_DIR/files/gt-remap-ports.txt\" 2>/dev/null \\"
+      print "        || grep -Fxq \"$ROM_NAME\" \"$USERDATA_PATH/PORTS-portmaster/use-remap-ports\" 2>/dev/null; }; then"
+      print "        echo \"Preloading gt-input-remap.so for $ROM_NAME\""
+      print "        export LD_PRELOAD=\"$PAK_DIR/lib/gt-input-remap.so${LD_PRELOAD:+:$LD_PRELOAD}\""
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-squashfs-tmp-guard: F23 — /tmp is a small RAM tmpfs on the 1GB
   # h700; process_squashfs_files' unsquashfs of a large runtime image fills
   # it mid-extract ("No space left on device" on the 120MB
@@ -737,6 +766,12 @@ PMEOF
   # E7: ship the remap shim; preloaded only via the gt-h700-remap-hook flag.
   mkdir -p "$assembled/lib"
   cp "$ASSETS/gt-input-remap.so" "$assembled/lib/gt-input-remap.so"
+
+  # gt-h700-port-remap: F25 — pak-shipped default list of ports that get the
+  # shim preloaded at launch (read by the run_port hook that
+  # edit_portmaster_launch adds; users extend via use-remap-ports in
+  # userdata without rebuilding).
+  cp "$ASSETS/gt-remap-ports.txt" "$assembled/files/gt-remap-ports.txt"
 
   # gt-h700-libffi: TrimUI provides libffi.so.7 via /usr/trimui/lib; h700 has
   # none (BaseOS ships only ABI-incompatible libffi.so.8), and the bundled
