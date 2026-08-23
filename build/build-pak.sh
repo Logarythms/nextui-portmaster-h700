@@ -501,6 +501,41 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-source-heal: F29 — harbourmaster recreates its default
+  # *.source.json files ONLY on first-run or a config-version migration
+  # (harbour.py: the first-run branch writes HM_SOURCE_DEFAULTS;
+  # update_config() is the only other writer). A config dir that kept
+  # config.json (first-run:false, version:2) but lost the source files is
+  # stuck forever: zero sources mean every port resolves as "unknown", all
+  # lists render empty, and Featured shows a bogus internet-required
+  # message — featured/porters/ports_info fetch through separate paths,
+  # masking the real cause. Observed on-device 2026-08-23: a half-applied
+  # upstream self-update (pre-F22) had deleted the source files, and a
+  # recovery that restored config.json without them wedged the GUI in
+  # exactly this state. Restore the pinned defaults (last_checked:null,
+  # data:{} — harbourmaster refetches the port database on next load).
+  # Deliberately conservative: ANY surviving *.source.json skips the heal
+  # (never fight a user-modified source set), and a missing config.json
+  # skips too (that's a fresh install; harbourmaster's own first-run path
+  # writes the defaults itself).
+  if ! grep -q 'gt-h700-source-heal' "$f"; then
+    awk '$0 == "    echo \"Starting PortMaster GUI\"" {
+      print "    # gt-h700-source-heal: harbourmaster only recreates its default sources on"
+      print "    # first-run or a config-version migration — a config dir with config.json"
+      print "    # but no *.source.json is stuck with empty ports lists forever. Restore"
+      print "    # the pinned defaults; any surviving source file skips the heal."
+      print "    if [ -f \"$EMU_DIR/config/config.json\" ] \\"
+      print "        && ! ls \"$EMU_DIR/config/\"*.source.json >/dev/null 2>&1; then"
+      print "        echo \"Restoring default harbourmaster port sources\""
+      print "        cp -f \"$PAK_DIR/files/gt-source-defaults/\"*.source.json \"$EMU_DIR/config/\""
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-squashfs-tmp-guard: F23 — /tmp is a small RAM tmpfs on the 1GB
   # h700; process_squashfs_files' unsquashfs of a large runtime image fills
   # it mid-extract ("No space left on device" on the 120MB
@@ -846,6 +881,13 @@ PMEOF
   # gt-h700-solarus-nojit: F28 — the -s pre-script run_port injects into
   # solarus port invocations (see edit_portmaster_launch).
   cp "$ASSETS/solarus-nojit.lua" "$assembled/files/solarus-nojit.lua"
+
+  # gt-h700-source-heal: F29 — pinned copies of harbourmaster's
+  # HM_SOURCE_DEFAULTS, restored by run_portmaster_gui when config.json
+  # survives but the *.source.json files are gone (see
+  # edit_portmaster_launch).
+  mkdir -p "$assembled/files/gt-source-defaults"
+  cp "$ASSETS/gt-source-defaults/"*.source.json "$assembled/files/gt-source-defaults/"
 
   # gt-h700-libffi: TrimUI provides libffi.so.7 via /usr/trimui/lib; h700 has
   # none (BaseOS ships only ABI-incompatible libffi.so.8), and the bundled

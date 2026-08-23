@@ -30,7 +30,7 @@ Unzip the new `PORTS.pak.zip` over the SD card the same way you installed it, re
 
 - Your installed ports, game files, saves, and downloaded runtimes are not part of the zip and stay untouched.
 - The first launch after upgrading takes about a minute longer (the pak re-unpacks and re-patches its internals) — that's expected.
-- This also repairs an install damaged by accepting the old update prompt on v0.1.0.
+- This also repairs an install damaged by accepting the old update prompt on v0.1.0 — including the "every ports list is empty and Featured claims it needs internet" state that damage can leave behind.
 
 ## Using it
 

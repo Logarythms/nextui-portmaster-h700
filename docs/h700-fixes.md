@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F28) below match the internal numbering used while these were
+Fix IDs (F1–F29) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one.
 
@@ -435,6 +435,40 @@ solarus does its heavy lifting in C++, and the result was play-verified
 at normal speed on hardware (rooms, transitions, music). The real fix
 belongs upstream in the solarus runtime image (a current LuaJIT 2.1
 rolling release, or plain Lua); reporting it is on the follow-up list.
+
+## An empty ports store that no update button fixes (F29)
+
+A day after v0.2.0 shipped, the store GUI on the reference device showed
+zero entries under All, Ready-to-run, and Featured; Featured claimed an
+internet connection was required despite working WiFi, and Settings →
+Update ports list changed nothing. The launch log told the story: every
+featured port was rejected with `unknown port <name>.zip` — the featured
+*collections* file had downloaded fine, but the main port database it
+references was empty.
+
+harbourmaster builds that database from two `*.source.json` files in
+`PortMaster/config/` and recreates them in exactly two situations:
+first-run, or a config-version migration. The 2026 self-updater's
+migration (the one the F22 incident ran half of) deletes the old source
+files as one of its steps; a config dir that keeps `config.json`
+(`first-run: false, version: 2`) but loses the source files is therefore
+stuck forever — no code path ever writes them again. The misleading part
+is that featured collections, porter lists, and `ports_info.json` all
+fetch through separate paths, so the GUI looks "partly online" and blames
+the network instead.
+
+Fix: the pak ships pinned copies of harbourmaster's two source defaults
+(`files/gt-source-defaults/`), and `run_portmaster_gui` restores them
+whenever `config.json` exists but no `*.source.json` does. The shipped
+defaults carry `last_checked: null` and empty data, so harbourmaster
+refetches the full database on the next load. The heal is deliberately
+conservative: any surviving source file skips it (a user-modified source
+set is intent, not damage), and a missing `config.json` skips it too
+(fresh installs take harbourmaster's own first-run path).
+
+Diagnostic note for future spelunking: the pak session log
+(`.userdata/h700/logs/PORTS.txt`) is truncated per launch — evidence
+from a failed attempt is gone by the time the next launch starts.
 
 ## Input architecture: an honest compatibility statement (F8)
 
