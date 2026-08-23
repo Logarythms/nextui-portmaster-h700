@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F24) below match the internal numbering used while these were
+Fix IDs (F1–F27) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one.
 
@@ -393,6 +393,26 @@ modifiers, arrows) — hold-state layers, mouse emulation, and analog
 handling are ignored (the RG SP has no sticks); and only event-consuming
 games are covered. Games that poll `SDL_GetKeyboardState` instead of
 reading events remain the one honestly-unsupported input tier (see F8).
+
+## Broken binaries inside a port: the port-fixes overlay (F27)
+
+Some ports bundle their own native libraries, and one of them can be
+broken for this device even when everything the pak provides is healthy.
+First confirmed case: the Tunics! port (`tunics_pm`) ships a
+`libmodplug.so.1` (tracker-music decoder) that dies on an illegal
+instruction (`udf #0`) the moment a map transition changes the music —
+caught red-handed with gdb attached on-device, and fixed live by
+swapping in Debian bullseye's build of the same library.
+
+The pak therefore carries a small overlay: replacement files live under
+`files/port-fixes/<port-dir-name>/`, mirroring the port's own layout,
+and `run_port` copies them over the installed port just before it
+launches. Re-applied at every launch, so reinstalling the port
+self-heals; `cmp`-guarded, so an unchanged file is never rewritten
+(a fresh mtime would retrigger rebuild-if-newer ports — the F12
+lesson). This is a mitigation, not a cure: the real fix belongs in the
+port itself, and reporting it to the port's packager is on the
+follow-up list.
 
 ## Input architecture: an honest compatibility statement (F8)
 

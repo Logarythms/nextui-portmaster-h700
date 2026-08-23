@@ -75,7 +75,7 @@ assert_contains "$work/launch.sh" 'grep -qi "on $TEMP_DATA_DIR/ports type"'
 # mtimes, clearing the spurious rebuild trigger (validated on-device).
 # DELIBERATELY UNCONDITIONAL: no h700 guard, since mtime preservation is
 # correct upstream behavior everywhere, not an h700-specific workaround.
-assert_eq "$(grep -c 'cp -fp' "$work/launch.sh")" "1" "cp -fp present once"
+assert_eq "$(grep -c 'cp -fp "\$PORTS_DIR"' "$work/launch.sh")" "1" "F12 cp -fp present once"
 # NOTE: matches the FULL F12 comment text, not the bare "gt-h700-cp-preserve"
 # substring — F13's gt-h700-shebang-guard line below deliberately
 # cross-references "(see gt-h700-cp-preserve)", so the bare substring count
@@ -220,7 +220,7 @@ assert_eq "$(grep -c 'gt-h700-redraw' "$work/pugwash")" "1" "redraw marker idemp
 assert_eq "$(grep -c 'gt-h700-redraw-env' "$work/launch.sh")" "1" "redraw-env marker idempotent"
 assert_eq "$(grep -c 'gt-h700-love-gles' "$work/launch.sh")" "1" "love-gles marker idempotent"
 assert_eq "$(grep -c 'gt-h700-mount-hygiene' "$work/launch.sh")" "1" "mount-hygiene marker idempotent"
-assert_eq "$(grep -c 'cp -fp' "$work/launch.sh")" "1" "cp -fp idempotent"
+assert_eq "$(grep -c 'cp -fp "\$PORTS_DIR"' "$work/launch.sh")" "1" "F12 cp -fp idempotent"
 assert_eq "$(grep -c 'gt-h700-cp-preserve: fresh mtimes' "$work/launch.sh")" "1" "cp-preserve marker idempotent"
 assert_eq "$(grep -c 'gt-h700-shebang-guard' "$work/launch.sh")" "1" "shebang-guard marker idempotent"
 assert_eq "$(grep -c 'gt-h700-presenter-kill' "$work/launch.sh")" "3" "presenter-kill marker idempotent"

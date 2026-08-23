@@ -402,6 +402,42 @@ edit_portmaster_launch() { # $1=launch.sh path
     }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-port-fixes: F27 — overlay pak-shipped replacement files onto
+  # known-broken port installs before launching them. First case: the
+  # tunics_pm port bundles a libmodplug.so.1 that dies on an illegal
+  # instruction (udf #0) on this device the moment a map transition changes
+  # the tracker music — gdb-attach caught the SIGSEGV inside the port's own
+  # copy, and bullseye's build fixed it live on hardware (2026-08-23).
+  # Files live under files/port-fixes/<port-dir-name>/ mirroring the port's
+  # layout. Re-applied at every launch so a port reinstall self-heals;
+  # cmp-guarded so unchanged files are never rewritten (a fresh mtime would
+  # retrigger rebuild-if-newer ports — the F12 lesson). Anchored on the
+  # nintendo_file line (upstream content, pin-safe), i.e. inside run_port
+  # after GAMEDIR is resolved and before the port executes.
+  if ! grep -q 'gt-h700-port-fixes' "$f"; then
+    awk '$0 == "    nintendo_file=$(find \"$USERDATA_PATH/PORTS-portmaster\" -maxdepth 1 -iname \"nintendo*\" -type f)" {
+      print "    # gt-h700-port-fixes: overlay pak-shipped replacement files onto known-"
+      print "    # broken port installs (e.g. tunics_pm ships a libmodplug.so.1 that dies"
+      print "    # on an illegal instruction here). cmp-guarded: unchanged files are never"
+      print "    # rewritten (fresh mtimes retrigger rebuild-if-newer ports)."
+      print "    gt_fix_dir=\"$PAK_DIR/files/port-fixes/${GAMEDIR##*/}\""
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && [ -d \"$gt_fix_dir\" ]; then"
+      print "        find \"$gt_fix_dir\" -type f | while IFS= read -r gt_fix_src; do"
+      print "            gt_rel=\"${gt_fix_src#\"$gt_fix_dir\"/}\""
+      print "            if ! cmp -s \"$gt_fix_src\" \"$GAMEDIR/$gt_rel\" 2>/dev/null; then"
+      print "                echo \"Port-fix overlay: replacing $gt_rel in ${GAMEDIR##*/}\""
+      print "                case \"$gt_rel\" in */*) mkdir -p \"$GAMEDIR/${gt_rel%/*}\" ;; esac"
+      print "                cp -fp \"$gt_fix_src\" \"$GAMEDIR/$gt_rel\""
+      print "            fi"
+      print "        done"
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-port-remap: F25 — preload the SDL joystick index-remap shim into
   # ports that read raw joystick events (h700 button indices sit +3 off the
   # layout ports expect; measured table in assets/gt-input-remap.c). The
@@ -844,6 +880,19 @@ PMEOF
   chmod +x "$assembled/PortMaster/7zzs.aarch64"
   file "$assembled/PortMaster/7zzs.aarch64" | grep -q 'aarch64' \
     || { echo "staged 7zzs.aarch64 is not an aarch64 binary" >&2; exit 1; }
+
+  # gt-h700-port-fixes: F27 — pak-shipped replacement files for known-broken
+  # port installs, applied per launch by the run_port overlay hook (see
+  # edit_portmaster_launch). First case: tunics_pm's bundled libmodplug dies
+  # on an illegal instruction on this device (see the PM_MODPLUG pin
+  # comment); ship bullseye's build under the port's own libs.aarch64 name.
+  fetch "$PM_MODPLUG_DEB_URL" "$PM_MODPLUG_DEB_SHA256" "$tmp/modplug.deb"
+  ar p "$tmp/modplug.deb" data.tar.xz | tar -xJ -C "$tmp" ./usr/lib/aarch64-linux-gnu/libmodplug.so.1.0.0
+  file "$tmp/usr/lib/aarch64-linux-gnu/libmodplug.so.1.0.0" | grep -q 'shared object.*aarch64' \
+    || { echo "extracted libmodplug.so.1.0.0 is not an aarch64 shared object" >&2; exit 1; }
+  mkdir -p "$assembled/files/port-fixes/tunics_pm/libs.aarch64"
+  cp "$tmp/usr/lib/aarch64-linux-gnu/libmodplug.so.1.0.0" \
+     "$assembled/files/port-fixes/tunics_pm/libs.aarch64/libmodplug.so.1"
 
   # gt-h700-gmtoolkit: F24 — RHH GameMaker patchscripts hard-require
   # "$controlfolder/gmtoolkit.$DEVICE_ARCH" (see the PM_GMTOOLKIT pin

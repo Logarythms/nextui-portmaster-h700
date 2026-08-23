@@ -104,6 +104,16 @@ PM_OGG_DEB_SHA256=910d1f3893a9340ea83bf19deebbc4e0d2362f22c274c2c2d3f00e4ba386c8
 # (2026-08-23, tag published 2026-07-18T14:57:05Z, commit 3fc2018).
 PM_GMTOOLKIT_ZIP_URL="https://github.com/JeodC/gmtoolkit/releases/download/latest/gmtoolkit-aarch64.zip"
 PM_GMTOOLKIT_ZIP_SHA256=ae03b66fbd6931ca96ae5f45d4d4791c5b00912d1ca09bed3f9c020dbcec52ea
+# fix F27 (2026-08-23): the tunics_pm port bundles a libmodplug.so.1 that
+# dies on an illegal-instruction trap (udf #0) on this device the moment a
+# map transition changes the tracker music — gdb-attach caught the SIGSEGV
+# inside the port's own libs.aarch64 copy; swapping in bullseye's build
+# fixed it live (rooms + music verified on hardware). Shipped via the
+# files/port-fixes overlay, applied per launch so port reinstalls
+# self-heal. .deb sha is the .deb's own sha256, double-download
+# cross-checked and matched against Packages.xz on the first try.
+PM_MODPLUG_DEB_URL="http://deb.debian.org/debian/pool/main/libm/libmodplug/libmodplug1_0.8.9.0-3_arm64.deb"
+PM_MODPLUG_DEB_SHA256=31562caee099234947a228d6392156495b10f4b1960182e419554fe58ee50402
 # gate finding F10 (2026-08-22): the LÖVE 11.5 runtime's liblove links
 # vorbisfile/theoradec/mpg123 (readelf-verified) with pixman/fontconfig/uuid
 # pulled in transitively; TrimUI provides them, h700 doesn't. Gate-validated
