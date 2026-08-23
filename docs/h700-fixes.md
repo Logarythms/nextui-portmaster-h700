@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F27) below match the internal numbering used while these were
+Fix IDs (F1–F28) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one.
 
@@ -413,6 +413,28 @@ self-heals; `cmp`-guarded, so an unchanged file is never rewritten
 lesson). This is a mitigation, not a cure: the real fix belongs in the
 port itself, and reporting it to the port's packager is on the
 follow-up list.
+
+## LuaJIT's aarch64 JIT miscompiles solarus quests (F28)
+
+With input (F25/F26) and the music decoder (F27) fixed, Tunics! still
+segfaulted on its first map transition — but only on the GL renderer,
+which briefly pointed suspicion at the Mali driver. A second gdb-attach
+told the real story: the crash was a jump into unmapped memory from
+`libluajit-5.1.so.2` with a corrupt stack — the signature of a JIT
+miscompile, not a GPU bug. The solarus runtime bundles LuaJIT
+2.1.0-beta3, whose aarch64 JIT has known codegen defects; the earlier
+"software rendering fixed it" observation was a red herring (different
+timing compiled different traces and merely dodged the bad one).
+
+Fix: run solarus quests with the JIT off. The engine's `-s` option runs
+a pre-script before the quest's `main.lua`; the pak ships a one-liner
+(`if jit then jit.off() end`) and `run_port` injects
+`-s=<pak>/files/solarus-nojit.lua` into any port script that defines a
+solarus runtime. LuaJIT's interpreter is stable and fast enough —
+solarus does its heavy lifting in C++, and the result was play-verified
+at normal speed on hardware (rooms, transitions, music). The real fix
+belongs upstream in the solarus runtime image (a current LuaJIT 2.1
+rolling release, or plain Lua); reporting it is on the follow-up list.
 
 ## Input architecture: an honest compatibility statement (F8)
 

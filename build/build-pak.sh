@@ -438,6 +438,33 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-solarus-nojit: F28 — the solarus runtime bundles LuaJIT
+  # 2.1.0-beta3, whose aarch64 JIT miscompiles under quest load on this
+  # device: gdb-attach caught SIGSEGV jumps into unmapped trace memory from
+  # libluajit during Tunics! map transitions (2026-08-23; a software-
+  # rendering "fix" earlier the same day was a red herring — different
+  # timing merely dodged the bad trace). Inject a -s pre-script that turns
+  # the JIT off (interpreter mode; solarus's heavy lifting is C++ —
+  # play-verified at normal speed). Applied to any port script that defines
+  # a solarus runtime; guarded per file, and the invocation line is matched
+  # by its leading "$runtime" call shape.
+  if ! grep -q 'gt-h700-solarus-nojit' "$f"; then
+    awk '$0 == "    nintendo_file=$(find \"$USERDATA_PATH/PORTS-portmaster\" -maxdepth 1 -iname \"nintendo*\" -type f)" {
+      print "    # gt-h700-solarus-nojit: LuaJIT 2.1.0-beta3 aarch64 JIT miscompiles under"
+      print "    # quest load (gdb-verified); run solarus quests with the JIT off via a"
+      print "    # -s pre-script. Guarded per file; solarus ports define runtime=\"solarus...\"."
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && grep -q \"^runtime=\\\"solarus\" \"$ROM_PATH\" \\"
+      print "        && ! grep -q \"solarus-nojit\" \"$ROM_PATH\"; then"
+      print "        echo \"Injecting solarus no-JIT pre-script into $ROM_NAME\""
+      print "        sed -i \"s|^\\\"\\$runtime\\\" |\\\"\\$runtime\\\" -s=$PAK_DIR/files/solarus-nojit.lua |\" \"$ROM_PATH\""
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-port-remap: F25 — preload the SDL joystick index-remap shim into
   # ports that read raw joystick events (h700 button indices sit +3 off the
   # layout ports expect; measured table in assets/gt-input-remap.c). The
@@ -815,6 +842,10 @@ PMEOF
   # edit_portmaster_launch adds; users extend via use-remap-ports in
   # userdata without rebuilding).
   cp "$ASSETS/gt-remap-ports.txt" "$assembled/files/gt-remap-ports.txt"
+
+  # gt-h700-solarus-nojit: F28 — the -s pre-script run_port injects into
+  # solarus port invocations (see edit_portmaster_launch).
+  cp "$ASSETS/solarus-nojit.lua" "$assembled/files/solarus-nojit.lua"
 
   # gt-h700-libffi: TrimUI provides libffi.so.7 via /usr/trimui/lib; h700 has
   # none (BaseOS ships only ABI-incompatible libffi.so.8), and the bundled
