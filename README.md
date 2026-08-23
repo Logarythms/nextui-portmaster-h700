@@ -39,10 +39,13 @@ Confirmed working out of the box on the RG SP:
 - [Balatro](https://portmaster.games/detail.html?name=balatro)
 - [Deltarune](https://portmaster.games/detail.html?name=deltarune)
 - [Downwell](https://portmaster.games/detail.html?name=downwell)
+- [Tunics!](https://portmaster.games/detail.html?name=tunics_pm) (via the built-in input translator — automatic)
+- [UFO 50](https://github.com/JeodC/RHH-Ports/tree/main/ports/released/gamemakerengine/ufo50) (an [RHH port](https://github.com/JeodC/RHH-Ports); first launch patches for ~1.5 hours)
 - [Undertale](https://portmaster.games/detail.html?name=undertale)
+- [Undertale Yellow](https://github.com/JeodC/RHH-Ports/tree/main/ports/released/gamemakerengine/utyellow) (an [RHH port](https://github.com/JeodC/RHH-Ports))
 - [VVVVVV](https://portmaster.games/detail.html?name=vvvvvv)
 
-Each link is the game's PortMaster page, with what you need to provide (e.g. purchased game files) and where to put it.
+Each link is the game's port page, with what you need to provide (e.g. purchased game files) and where to put it.
 
 **Games not on this list may still work** — this is only what's been verified so far. The list will grow as more are confirmed; if you get another one working, please open an issue.
 

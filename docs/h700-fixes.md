@@ -375,6 +375,18 @@ nothing, and gptokeyb itself stays running untouched — its synthetic
 keyboard is inert here, but its Select+Start kill hotkey reads the pad
 directly and remains the quit path.
 
+The decisive subtlety, found on hardware when the first synthesis build
+still produced a dead title screen: SDL only delivers joystick events to
+processes that have *opened* a joystick — and a keyboard-only game has
+no reason to ever open one. Solarus's event pump ran straight through
+the shim's interposers, yet not a single joystick event arrived to
+translate. So when synthesis is active, the shim opens every joystick
+itself (lazily, on the first event poll after SDL is up, initializing
+the joystick subsystem if the game never did; opens are refcounted, so
+games that open their own pad are unaffected). With that in place the
+whole chain lit up: `opened 1/1 joystick(s)` → button events → key
+events → Tunics! playable, hardware-verified 2026-08-23.
+
 Deliberate limits: only the simple `name = key` subset of the gptk
 format is honored (letters, digits, space/esc/tab/enter/backspace,
 modifiers, arrows) — hold-state layers, mouse emulation, and analog
