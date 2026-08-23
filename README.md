@@ -24,6 +24,14 @@ You'll need the device's SD card — browse it on the device, or take it out and
    ⚠️ The file must **not** be empty, or PortMaster won't appear.
 5. Put the card back, restart the device, and open **PortMaster** under **Ports**.
 
+## Upgrading from an earlier release
+
+Unzip the new `PORTS.pak.zip` over the SD card the same way you installed it, replacing files when asked. Nothing else to do:
+
+- Your installed ports, game files, saves, and downloaded runtimes are not part of the zip and stay untouched.
+- The first launch after upgrading takes about a minute longer (the pak re-unpacks and re-patches its internals) — that's expected.
+- This also repairs an install damaged by accepting the old update prompt on v0.1.0.
+
 ## Using it
 
 - **PortMaster's self-update is disabled by this build.** Updating would replace the h700-patched runtime with the official one, which won't run on the RG SP — so the update prompt never appears, and even a manually triggered update is a no-op. New pak versions come as releases of this repository instead.
