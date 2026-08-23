@@ -26,7 +26,7 @@ You'll need the device's SD card — browse it on the device, or take it out and
 
 ## Using it
 
-- **Decline PortMaster's update prompt.** Updating replaces this h700 build with the official one, which won't run on the RG SP.
+- **PortMaster's self-update is disabled by this build.** Updating would replace the h700-patched runtime with the official one, which won't run on the RG SP — so the update prompt never appears, and even a manually triggered update is a no-op. New pak versions come as releases of this repository instead.
 - **Buttons use the Xbox layout** (A / B / X / Y in their Xbox positions).
 - Not every port runs — see below.
 
@@ -37,6 +37,7 @@ Confirmed working out of the box on the RG SP:
 - 2048 Plus (the *Plus* version — **not** the regular 2048)
 - Apotris
 - Balatro
+- Deltarune (bring your own game files; the first launch patches them for ~25 minutes)
 - Downwell
 - Undertale
 - VVVVVV 
