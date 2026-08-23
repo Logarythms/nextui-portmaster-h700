@@ -402,6 +402,36 @@ edit_portmaster_launch() { # $1=launch.sh path
     }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-squashfs-tmp-guard: F23 — /tmp is a small RAM tmpfs on the 1GB
+  # h700; process_squashfs_files' unsquashfs of a large runtime image fills
+  # it mid-extract ("No space left on device" on the 120MB
+  # gmtoolkit.squashfs, observed on-device 2026-08-23), and since a failed
+  # image never gets its .processed marker, the doomed extract re-runs on
+  # EVERY GUI exit. Skip images whose conservative size estimate (4x the
+  # compressed file) exceeds free /tmp space, with an honest log line.
+  # Extracting to the SD instead is NOT an option: the card is vfat, which
+  # cannot hold the symlinks/exec bits a rebuilt squashfs must preserve.
+  # Ports needing tools from an oversized runtime are handled case-by-case
+  # (RHH's gmtoolkit ships as a control-folder BINARY via F24, no squashfs).
+  if ! grep -q 'gt-h700-squashfs-tmp-guard' "$f"; then
+    awk '$0 == "    tmpdir=$(mktemp -d) || return 1" {
+      print "    # gt-h700-squashfs-tmp-guard: a too-big-for-tmpfs image would fail its"
+      print "    # extract mid-flight and retry forever (no .processed marker on failure);"
+      print "    # skip it honestly instead. 4x compressed size is the estimate; vfat SD"
+      print "    # space is no fallback (symlinks/exec bits would be lost on rebuild)."
+      print "    gt_sq_bytes=$(wc -c < \"$squashfs_file\")"
+      print "    gt_tmp_free_kb=$(df -k /tmp | awk '\''NR==2 {print $4}'\'')"
+      print "    if [ -n \"$gt_tmp_free_kb\" ] && [ \"$((gt_sq_bytes / 256))\" -gt \"$gt_tmp_free_kb\" ]; then"
+      print "        echo \"Skipping $squashfs_basename: estimated extracted size exceeds free /tmp (tmpfs); leaving unprocessed\""
+      print "        return 0"
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   rm -f "$f.bak"
 }
 
@@ -760,13 +790,30 @@ PMEOF
   # (observed on-device 2026-08-23; the failure was invisible until F17
   # restored patcher logging). Stage the same pinned binary into
   # PortMaster/ at build time, fail-closed like every other staged file.
-  mkdir -p "$tmp/binx"
-  tar -xzf "$assembled/files/bin.tar.gz" -C "$tmp/binx" 7zzs.aarch64 2>/dev/null \
-    || tar -xzf "$assembled/files/bin.tar.gz" -C "$tmp/binx" ./7zzs.aarch64
-  cp "$tmp/binx/7zzs.aarch64" "$assembled/PortMaster/7zzs.aarch64"
+  gt_7zzs_src="$assembled/bin/7zzs.aarch64"
+  if [ ! -f "$gt_7zzs_src" ]; then
+    mkdir -p "$tmp/binx"
+    tar -xzf "$assembled/files/bin.tar.gz" -C "$tmp/binx"
+    gt_7zzs_src=$(find "$tmp/binx" -name 7zzs.aarch64 -type f | head -1)
+  fi
+  { [ -n "$gt_7zzs_src" ] && [ -f "$gt_7zzs_src" ]; } \
+    || { echo "7zzs.aarch64 not found in bin/ or files/bin.tar.gz" >&2; exit 1; }
+  cp "$gt_7zzs_src" "$assembled/PortMaster/7zzs.aarch64"
   chmod +x "$assembled/PortMaster/7zzs.aarch64"
   file "$assembled/PortMaster/7zzs.aarch64" | grep -q 'aarch64' \
     || { echo "staged 7zzs.aarch64 is not an aarch64 binary" >&2; exit 1; }
+
+  # gt-h700-gmtoolkit: F24 — RHH GameMaker patchscripts hard-require
+  # "$controlfolder/gmtoolkit.$DEVICE_ARCH" (see the PM_GMTOOLKIT pin
+  # comment). Fetched pinned, license shipped alongside, fail-closed.
+  fetch "$PM_GMTOOLKIT_ZIP_URL" "$PM_GMTOOLKIT_ZIP_SHA256" "$tmp/gmtoolkit.zip"
+  mkdir -p "$tmp/gmtk"
+  unzip -q "$tmp/gmtoolkit.zip" -d "$tmp/gmtk"
+  cp "$tmp/gmtk/gmtoolkit.aarch64" "$assembled/PortMaster/gmtoolkit.aarch64"
+  cp "$tmp/gmtk/gmtoolkit.LICENSE.txt" "$assembled/PortMaster/gmtoolkit.LICENSE.txt"
+  chmod +x "$assembled/PortMaster/gmtoolkit.aarch64"
+  file "$assembled/PortMaster/gmtoolkit.aarch64" | grep -q 'aarch64' \
+    || { echo "staged gmtoolkit.aarch64 is not an aarch64 binary" >&2; exit 1; }
 
   # gt-h700-love-av: F10 — the LÖVE 11.5 runtime's liblove links
   # vorbisfile/theoradec/mpg123 (readelf-verified) with pixman/fontconfig/uuid

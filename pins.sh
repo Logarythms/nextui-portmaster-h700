@@ -90,6 +90,20 @@ PM_LIBMD_DEB_SHA256=3c490cdcce9d25e702e6587b6166cd8e7303fce8343642d9d5d99695282a
 # needed this round).
 PM_OGG_DEB_URL="http://deb.debian.org/debian/pool/main/libo/libogg/libogg0_1.3.4-0.1_arm64.deb"
 PM_OGG_DEB_SHA256=910d1f3893a9340ea83bf19deebbc4e0d2362f22c274c2c2d3f00e4ba386c871
+# fix F24 (2026-08-23): RHH GameMaker ports (UFO 50, Undertale Yellow) run
+# patchscripts that hard-require a PREBUILT gmtoolkit binary at
+# "$controlfolder/gmtoolkit.$DEVICE_ARCH" ("Get it from
+# github.com/JeodC/gmtoolkit/releases" — a user-installed extra in RHH's
+# design; shipped here so those ports patch out of the box). The binary is
+# byte-identical in size to the one the official deltarune port bundles in
+# its own tools/, which already ran successfully on this device's glibc
+# 2.30. NOTE: the upstream release tag is a ROLLING "latest" — if upstream
+# rolls it, this pin fails closed at build time and must be refreshed
+# deliberately (re-verify like any pin: double-download + on-device run).
+# Zip sha is the asset's own sha256, double-download cross-checked
+# (2026-08-23, tag published 2026-07-18T14:57:05Z, commit 3fc2018).
+PM_GMTOOLKIT_ZIP_URL="https://github.com/JeodC/gmtoolkit/releases/download/latest/gmtoolkit-aarch64.zip"
+PM_GMTOOLKIT_ZIP_SHA256=ae03b66fbd6931ca96ae5f45d4d4791c5b00912d1ca09bed3f9c020dbcec52ea
 # gate finding F10 (2026-08-22): the LÖVE 11.5 runtime's liblove links
 # vorbisfile/theoradec/mpg123 (readelf-verified) with pixman/fontconfig/uuid
 # pulled in transitively; TrimUI provides them, h700 doesn't. Gate-validated

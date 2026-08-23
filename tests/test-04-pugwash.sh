@@ -193,6 +193,27 @@ def_line=$(grep -n '^def portmaster_check_update(pm, config, temp_dir):$' "$work
 gate_line=$(grep -n 'GT_DISABLE_PM_UPDATE' "$work/pugwash" | head -1 | cut -d: -f1)
 assert_eq "$((def_line + 1))" "$gate_line" "update gate is the first line inside portmaster_check_update"
 
+# --- launch.sh: F23 gt-h700-squashfs-tmp-guard — oversized images skipped ---
+# /tmp is a small RAM tmpfs on the 1GB h700; unsquashfs of a large runtime
+# (the 120MB gmtoolkit.squashfs) fills it mid-extract ("No space left on
+# device", observed 2026-08-23) and — with no .processed marker written on
+# failure — the doomed extract re-runs on every GUI exit. The guard skips
+# images whose 4x-compressed-size estimate exceeds free /tmp, logging
+# honestly. Placed inside modify_squashfs_scripts BEFORE the mktemp so no
+# tmpdir is leaked on the skip path.
+# Marker count 2: the guard's own header comment + the F23 comment block.
+assert_contains "$work/launch.sh" 'gt-h700-squashfs-tmp-guard'
+# shellcheck disable=SC2016
+assert_contains "$work/launch.sh" 'gt_sq_bytes=$(wc -c < "$squashfs_file")'
+# the free-space probe must survive the double-quoting gauntlet intact
+# shellcheck disable=SC2016
+assert_contains "$work/launch.sh" "df -k /tmp | awk 'NR==2 {print \$4}'"
+basename_line=$(grep -n 'squashfs_basename=$(basename "$squashfs_file")' "$work/launch.sh" | head -1 | cut -d: -f1)
+guard_probe_line=$(grep -n 'gt_sq_bytes=' "$work/launch.sh" | head -1 | cut -d: -f1)
+mktemp_line=$(grep -n 'tmpdir=$(mktemp -d) || return 1' "$work/launch.sh" | head -1 | cut -d: -f1)
+[ "$basename_line" -lt "$guard_probe_line" ] || { echo "tmp guard is not after the basename assignment"; exit 1; }
+[ "$guard_probe_line" -lt "$mktemp_line" ] || { echo "tmp guard is not before the mktemp (would leak tmpdir on skip)"; exit 1; }
+
 # --- idempotency ---
 GT_STAGE_EDIT_ONLY="$work" sh "$ROOT/build/build-pak.sh" portmaster
 assert_eq "$(grep -c 'gt-h700-redraw' "$work/pugwash")" "1" "redraw marker idempotent"
@@ -208,6 +229,7 @@ assert_eq "$(grep -c 'gt-h700-presenter-sync' "$work/launch.sh")" "1" "presenter
 assert_eq "$(grep -c 'gt-h700-devfd' "$work/launch.sh")" "1" "devfd marker idempotent"
 assert_eq "$(grep -c 'gt-h700-no-self-update' "$work/launch.sh")" "2" "no-self-update launch.sh markers idempotent"
 assert_eq "$(grep -c 'gt-h700-no-self-update' "$work/pugwash")" "1" "no-self-update pugwash marker idempotent"
+assert_eq "$(grep -c 'gt-h700-squashfs-tmp-guard' "$work/launch.sh")" "1" "squashfs-tmp-guard marker idempotent"
 python3 -c "import ast; ast.parse(open('$work/pugwash').read())" \
   || { echo "patched pugwash does not parse after rerun"; exit 1; }
 sh -n "$work/launch.sh" || { echo "edited launch.sh does not parse after rerun"; exit 1; }
