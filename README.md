@@ -34,10 +34,12 @@ You'll need the device's SD card — browse it on the device, or take it out and
 
 Confirmed working out of the box on the RG SP:
 
-- Balatro
-- VVVVVV
 - 2048 Plus (the *Plus* version — **not** the regular 2048)
 - Apotris
+- Balatro
+- Downwell
+- Undertale
+- VVVVVV 
 
 **Games not on this list may still work** — this is only what's been verified so far. The list will grow as more are confirmed; if you get another one working, please open an issue.
 
