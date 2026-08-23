@@ -371,6 +371,44 @@ static void gt_trace(const char *src, SDL_Event *ev) {
     }
 }
 
+/* v2: a keyboard-only game has no reason to open a joystick — and SDL only
+ * delivers SDL_JOYBUTTONDOWN/JOYHATMOTION for joysticks something in the
+ * process has opened. Solarus proved it on-device (2026-08-23): its event
+ * pump ran through this shim, yet no joystick event ever arrived to
+ * translate. So when synthesis is active, the shim opens every joystick
+ * itself — lazily, on the first event poll after SDL's video or joystick
+ * subsystem is up (the constructor is too early), initializing the joystick
+ * subsystem if the app never did. Opens are refcounted by SDL, so an app
+ * that also opens the pad is unaffected. */
+static void gt_ensure_joystick_open(void) {
+    static int done;
+    if (done || !gt_map.loaded) return;
+    static Uint32 (*was_init)(Uint32);
+    static int (*init_sub)(Uint32);
+    static int (*num_joy)(void);
+    static SDL_Joystick *(*joy_open)(int);
+    if (!was_init) {
+        was_init = (Uint32 (*)(Uint32))dlsym(RTLD_NEXT, "SDL_WasInit");
+        init_sub = (int (*)(Uint32))dlsym(RTLD_NEXT, "SDL_InitSubSystem");
+        num_joy  = (int (*)(void))dlsym(RTLD_NEXT, "SDL_NumJoysticks");
+        joy_open = (SDL_Joystick *(*)(int))dlsym(RTLD_NEXT, "SDL_JoystickOpen");
+    }
+    if (!was_init || !init_sub || !num_joy || !joy_open) { done = 1; return; }
+    if (!was_init(SDL_INIT_VIDEO) && !was_init(SDL_INIT_JOYSTICK))
+        return; /* SDL not up yet — retry on a later poll */
+    if (!was_init(SDL_INIT_JOYSTICK) && init_sub(SDL_INIT_JOYSTICK) != 0) {
+        fprintf(stderr, "gt-input-remap: joystick subsystem init failed\n");
+        done = 1;
+        return;
+    }
+    int n = num_joy(), i, opened = 0;
+    for (i = 0; i < n; i++)
+        if (joy_open(i)) opened++;
+    fprintf(stderr, "gt-input-remap: opened %d/%d joystick(s) for key synthesis\n",
+            opened, n);
+    done = 1;
+}
+
 static void gt_make_key_event(SDL_Event *ev, Uint32 timestamp,
                               gt_key k, int pressed) {
     memset(ev, 0, sizeof *ev);
@@ -432,6 +470,7 @@ static void gt_rewrite(SDL_Event *ev) {
 int SDL_PollEvent(SDL_Event *ev) {
     static int (*real)(SDL_Event *);
     if (!real) real = (int (*)(SDL_Event *))dlsym(RTLD_NEXT, "SDL_PollEvent");
+    gt_ensure_joystick_open();
     if (ev && gt_stash_n > 0) {
         *ev = gt_stash[0];
         gt_stash_n--;
@@ -446,6 +485,7 @@ int SDL_PollEvent(SDL_Event *ev) {
 int SDL_WaitEventTimeout(SDL_Event *ev, int timeout) {
     static int (*real)(SDL_Event *, int);
     if (!real) real = (int (*)(SDL_Event *, int))dlsym(RTLD_NEXT, "SDL_WaitEventTimeout");
+    gt_ensure_joystick_open();
     if (ev && gt_stash_n > 0) {
         *ev = gt_stash[0];
         gt_stash_n--;
