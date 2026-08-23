@@ -48,8 +48,8 @@ Confirmed working out of the box on the RG SP:
 Gamepad input on this platform has limits, so ports fall into three groups:
 
 - ✅ **Out of the box** — ports using SDL's GameController API. LÖVE-based games also work.
-- ⚠️ **With a little setup** — ports that read raw joystick input; fix via the port's own in-game remapping, or the optional [input-remap shim](#input-remap-shim).
-- ❌ **Not yet** — ports that rely on PortMaster's keyboard-emulation layer, or that poll raw button state.
+- ⚠️ **With a little setup** — ports that read raw joystick input, and keyboard-style ports (the ones whose title screen asks for a key like SPACE): both are handled by the built-in input translator — see [Fixing games that ignore your buttons](#fixing-games-that-ignore-your-buttons).
+- ❌ **Not yet** — ports that *poll* keyboard or button state instead of listening for presses.
 
 Full details: [`docs/h700-fixes.md`](docs/h700-fixes.md).
 
@@ -64,12 +64,70 @@ make test    # runs the shell test suite
 
 The input-remap shim ships prebuilt in `assets/`; rebuilding it (`make shim`) needs Docker.
 
-## Input-remap shim
+## Fixing games that ignore your buttons
 
-Some ports read raw controller indices and need them corrected — the bundled shim fixes those. It is applied **per port**, never globally, because ports that already get correct input (the GameController tier) must stay untouched.
+Some games start fine but then don't react to any button — often the title
+screen even asks for a keyboard key ("PRESS SPACE"). Those games were written
+for a keyboard. On most PortMaster devices a background helper silently turns
+gamepad presses into keystrokes, but NextUI on the RG SP never delivers that
+helper's keystrokes to games. This pak therefore includes its own translator
+that does the same job from the inside.
 
-- **Ports (per-port, some enabled by default):** the pak ships a default list at `files/gt-remap-ports.txt` inside the pak (currently: Tunics!). To enable the shim for another port without rebuilding, create a file named `use-remap-ports` in the pak's userdata directory (`.userdata/<platform>/PORTS-portmaster/`) containing that port's launcher filename exactly as it appears in the Roms folder (e.g. `Some Game.sh`), one per line. Remove the line to turn it back off. If that makes a broken port playable for you, please open an issue so it can join the shipped default list.
-- **PortMaster GUI:** off by default and normally not needed (the GUI has its own mapping fix). To force it, create an empty file named `use-remap` in the same userdata directory; delete it to turn it back off.
+**It's automatic, per game.** Every affected port ships a little mapping file
+(ending in `.gptk`) written by the port's author that says which button
+should press which key — for Tunics! that's A = Space, Start = W, d-pad =
+arrow keys, and so on. When the translator is enabled for a game, that game's
+own mapping file is picked up automatically. You never have to write a
+mapping yourself.
+
+Games on the built-in list (currently: **Tunics!**) need no setup at all.
+
+### Turning it on for another game
+
+If a game starts but ignores every button, try this:
+
+1. Power the RG SP off and put its SD card into your computer.
+2. On the card, open the folder `.userdata/h700/PORTS-portmaster/`.
+   Folders starting with a dot are hidden by default — turn on
+   "show hidden files" (Windows: View menu; Mac Finder: Cmd+Shift+.).
+3. Create a plain text file there named exactly `use-remap-ports`
+   (no `.txt` at the end).
+4. Inside it, write the game's launcher filename exactly as it appears in
+   the card's `Roms/Ports (PORTS)` folder, for example:
+
+   ```
+   Some Game.sh
+   ```
+
+   One game per line. Spelling, capitalization, and spaces must match.
+5. Save the file, put the card back in, and start the game normally.
+
+Changed your mind? Remove the game's line (or delete the file) and it's back
+to how it was. Nothing else on the card is touched.
+
+**If this makes a game playable for you, please open an issue with the
+game's name** — it can then join the built-in list, and the next release
+fixes it for everyone out of the box.
+
+Two honest limitations: a game with no `.gptk` mapping file only gets its
+button numbering fixed (that alone cures some games); and a few games read
+the keyboard in a way the translator can't reach yet ("state polling") —
+those stay broken for now.
+
+<details>
+<summary>Technical details</summary>
+
+The translator is <code>lib/gt-input-remap.so</code>, an <code>LD_PRELOAD</code>
+shim the launcher injects only for listed ports. It always corrects this
+device's shifted SDL joystick button indices (hardware-measured table), and —
+when the launcher finds a <code>.gptk</code> in the port's game directory —
+replaces mapped joystick events with synthesized <code>SDL_KEYDOWN/KEYUP</code>
+at the SDL event layer, honoring the simple <code>name = key</code> subset of
+the gptk format. The pak-shipped default list lives at
+<code>files/gt-remap-ports.txt</code>; the GUI has a separate opt-in flag file
+<code>use-remap</code> (normally not needed — the GUI has its own mapping fix).
+Full story: <a href="docs/h700-fixes.md">docs/h700-fixes.md</a>.
+</details>
 
 ## Credits & license
 

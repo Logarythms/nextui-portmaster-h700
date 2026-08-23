@@ -351,6 +351,37 @@ ports:
    runtime that knows RHH sources, download it manually and place it at
    `PortMaster/libs/gmloadernext.squashfs` inside the installed pak.
 
+## Keyboard-driven ports: SDL-layer key synthesis (F26)
+
+The largest class of dead ports on this platform was the
+gamepad-to-keyboard tier: games written for a keyboard, which supported
+PortMaster devices serve through gptokeyb's virtual uinput keyboard —
+a device NextUI's SDL never delivers to games (F8). Tunics! made the
+failure vivid: with every other layer fixed it booted to its title
+screen and asked for SPACE, unreachable from a gamepad.
+
+The fix extends the input-remap shim (F25's per-port `LD_PRELOAD`) to do
+gptokeyb's job at the SDL layer, inside the game process. The launcher
+hands the shim the port's own `.gptk` mapping file via `GT_REMAP_GPTK` —
+the same file gptokeyb would have used, so each port keeps the exact
+key layout its author designed. Joystick button events whose
+(index-corrected) button carries a mapping are replaced in the event
+stream by the corresponding `SDL_KEYDOWN`/`SDL_KEYUP`; hat motions become
+the mapped arrow keys, edge-tracked with releases emitted before presses
+(a diagonal flip can produce up to four key events — the extras are
+served from a small internal stash on subsequent polls). Unmapped
+buttons keep their corrected joystick events, so hybrid ports lose
+nothing, and gptokeyb itself stays running untouched — its synthetic
+keyboard is inert here, but its Select+Start kill hotkey reads the pad
+directly and remains the quit path.
+
+Deliberate limits: only the simple `name = key` subset of the gptk
+format is honored (letters, digits, space/esc/tab/enter/backspace,
+modifiers, arrows) — hold-state layers, mouse emulation, and analog
+handling are ignored (the RG SP has no sticks); and only event-consuming
+games are covered. Games that poll `SDL_GetKeyboardState` instead of
+reading events remain the one honestly-unsupported input tier (see F8).
+
 ## Input architecture: an honest compatibility statement (F8)
 
 NextUI's SDL2 build on h700 does not deliver PortMaster's usual
@@ -364,18 +395,22 @@ in general, so ports fall into three honest tiers:
 1. **Works out of the box.** Ports that use SDL's GameController API
    read the shipped controller-database mapping directly and get
    correct, zero-configuration input.
-2. **Works with per-port help.** Ports that read raw joystick/event
-   input directly (rather than through the GameController API) see
-   button indices shifted by this device's particular hardware layout.
-   These are fixable per port, either through the port's own in-game
-   remapping options, or by opting into this repository's bundled input
-   index-remap shim (see the README) for that one port.
-3. **Currently unsupported.** Ports that depend on the gamepad-to-keyboard
-   translation layer, and ports that poll raw controller button state
-   directly (as opposed to reading discrete button-press events), have
-   no working input path yet on this platform. Fixing this tier needs a
-   more invasive shim (intercepting state-polling calls and injecting
-   synthetic keyboard events) that is not yet part of this repository.
+2. **Works with per-port help.** Two kinds. Ports that read raw
+   joystick/event input directly (rather than through the
+   GameController API) see button indices shifted by this device's
+   particular hardware layout — fixed by the bundled index-remap shim
+   (F25), or via the port's own in-game remapping options. And ports
+   written for a keyboard — the gamepad-to-keyboard tier — are served
+   by the same shim's SDL-layer key synthesis (F26), driven by each
+   port's own `.gptk` mapping. Both are enabled per port via the
+   shipped default list or the user's `use-remap-ports` file (see the
+   README).
+3. **Currently unsupported.** Ports that poll raw controller button
+   state or keyboard state directly (as opposed to reading discrete
+   press events) still have no working input path on this platform.
+   Fixing this last tier needs state-call interposition
+   (`SDL_JoystickGetButton` / `SDL_GetKeyboardState`) that is not yet
+   part of this repository.
 
 The gamepad-to-keyboard translation tool itself does not interfere with
 tier-1 input and is left enabled by default.
