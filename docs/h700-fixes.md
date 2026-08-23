@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F16) below match the internal numbering used while these were
+Fix IDs (F1–F24) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one.
 
@@ -69,6 +69,14 @@ directory so it never depends on what the host image happens to provide.
   chain, a font-rendering dependency, and a UUID library that just
   happen not to be part of any h700 system image. Fix: ship all seven,
   pinned from bullseye, the same way as the other lib-gap fixes above.
+- **F20 — Solarus-engine ports (e.g. Tunics!) fail to start: `libogg`
+  missing.** The one library the F9/F10 rounds didn't catch: `libogg` is
+  the container layer *underneath* the vorbis stack, and the Solarus
+  engine links it directly. A full dependency-closure walk of the
+  solarus binary on-device showed it as the single unresolvable soname —
+  the F10 vorbis libraries reference it too, but LÖVE never faulted
+  because its runtime folder bundles its own copy. Fix: ship `libogg0`,
+  pinned from bullseye.
 
 ## Roms launcher trigger file (F2)
 
@@ -233,6 +241,115 @@ With all three fixes in place, extended hands-off runs plus deliberate
 navigation produced zero recurrences of the repaint freeze, and process
 listings confirmed no orphaned presenter process survives either a
 normal launch or an exit.
+
+## Port and patcher logs were always silently empty (F17)
+
+Every modern PortMaster port script — and every port patcher — sets up its
+logging the same way: `exec > >(tee "$GAMEDIR/log.txt") 2>&1`. That bash
+process-substitution idiom opens a path of the form `/dev/fd/N`, and
+BaseOS/NextUI's device tree simply doesn't provide the standard POSIX
+`/dev/fd` family (`/dev/fd → /proc/self/fd`, plus `/dev/stdin`,
+`/dev/stdout`, `/dev/stderr`). The `exec` redirection fails, the script
+carries on with its previous stdout, and every `log.txt` and
+`patchlog.txt` on the card stays zero bytes forever.
+
+That sounds cosmetic; it isn't. It means every downstream failure is
+invisible — the F18 data-loss bug below shipped a broken result while
+*appearing* to have patched successfully for twenty-four minutes,
+precisely because its log had nowhere to go. Fix: `launch.sh` (re)creates
+the four symlinks at every launch (`devtmpfs` is per-boot, and the links
+are `[ -e ]`-guarded so this is a no-op on TrimUI, which has them).
+
+## The Deltarune patcher silently destroyed game data (F18)
+
+Modern port patchscripts (the official Deltarune port, the RHH GameMaker
+ports) call `"$controlfolder/7zzs.$DEVICE_ARCH"` for archive surgery —
+in Deltarune's case, to inject each chapter's patched `game.droid` into a
+copy of the port's skeleton APK. The upstream pak ships `7zzs.aarch64`
+only inside `files/bin.tar.gz` (unpacked to `bin/` at first boot), so the
+control-folder path doesn't exist and the injection step fails — but the
+patchscript's surrounding steps don't check that failure: the bare
+skeleton copy ships anyway, and the patcher's cleanup then **deletes the
+user's original `data.win` files**. Observed live on hardware: a
+24-minute "successful" patch left six byte-identical empty APKs, and the
+game data was gone (with F17 masking the whole thing). Fix: the build
+stages the same pinned `7zzs.aarch64` into `PortMaster/` fail-closed, so
+the patcher's expected path exists.
+
+## `pm_platform_helper: command not found` (F19)
+
+2026-era port scripts call `pm_platform_helper` unguarded; the runtime
+version this pak pins (2025.03) predates it. In current upstream
+PortMaster the function is an effective no-op (a dialog-pipe close plus
+`printf ""`), so the fix appends a faithful stub to the pak's
+`control.txt` — which `launch.sh` re-installs into the live control
+folder at every launch, making the stub self-healing as well.
+
+## Ports that reset `LD_LIBRARY_PATH` lost every pak-shipped library (F21)
+
+All the "lib gap" fixes above ship libraries in the pak's own `lib/`
+directory — but many port scripts hard-reset `LD_LIBRARY_PATH` to their
+own value (`"$GAMEDIR/libs:$runtime_dir:..."`), which threw the pak's
+directory away again. Tunics! faulted on `libopenal.so.1` while the pak
+carried that exact file. The existing launch-time injection (which
+already re-appends the system lib dir to such scripts) now appends the
+pak's `lib/` as well — last in the search order, so port-bundled and
+system libraries keep priority.
+
+## The GUI's self-update must never run here (F22)
+
+This pak is a *pinned repackage*: its GUI, python libraries, and control
+files carry h700-specific patches applied at build and launch time. The
+GUI's periodic "There is a new version of PortMaster" prompt is therefore
+a foot-gun with no working "yes" path — accepting it overwrites the
+patched runtime with upstream files. Observed live: an accidental accept
+half-extracted the new runtime, died on a Text-file-busy binary
+mid-archive, and left a 2025.03/2026 chimera control folder. Fix, in
+three coordinated parts: `launch.sh` exports `GT_DISABLE_PM_UPDATE=1`;
+the GUI's update check early-returns on that env (the prompt never
+appears); and the updater function itself (`_install_portmaster`) is
+no-op'd at launch time through the same mechanism the pak already uses
+to disable upstream's `portmaster_install` — so even a manually
+triggered update cannot write over the pak. Runtime *data* updates
+(ports lists, runtime images) are unaffected.
+
+## Oversized runtime images vs the RAM-backed /tmp (F23)
+
+After the GUI exits, the pak post-processes downloaded runtime squashfs
+images (rewriting `#!/bin/bash` shebangs and PortMaster paths inside
+them). That extraction happens under `/tmp` — a small RAM tmpfs on this
+1GB device — and a large image (the 120MB `gmtoolkit.squashfs`) fills it
+mid-extract ("No space left on device"). Worse, a failed image never
+receives its `.processed` marker, so the doomed extract re-ran on every
+GUI exit. Extracting to the SD card instead is not an option: the card
+is vfat, which cannot represent the symlinks and exec bits a rebuilt
+squashfs must preserve. Fix: skip images whose conservative size
+estimate (4× the compressed file) exceeds free `/tmp` space, with an
+honest log line. Ports that need tools out of an oversized runtime are
+handled case-by-case — see F24.
+
+## RHH GameMaker ports: gmtoolkit and the gmloadernext runtime (F24)
+
+[RHH-Ports](https://github.com/JeodC/RHH-Ports) GameMaker ports (UFO 50,
+Undertale Yellow, …) have two requirements beyond official PortMaster
+ports:
+
+1. **A prebuilt `gmtoolkit` binary** at
+   `"$controlfolder/gmtoolkit.$DEVICE_ARCH"` — in RHH's design a
+   user-installed extra from
+   [JeodC/gmtoolkit](https://github.com/JeodC/gmtoolkit/releases). The
+   build now ships it (pinned, license alongside; note the upstream
+   release tag is a rolling `latest`, so the pin fails closed and must
+   be refreshed deliberately if upstream rolls it). The binary is
+   byte-identical to the one the official Deltarune port bundles, which
+   already proved itself against this device's glibc 2.30.
+2. **The `gmloadernext.squashfs` runtime**, which is *not* an official
+   PortMaster runtime — it lives in RHH's own
+   [`runtimes-latest`](https://github.com/JeodC/RHH-Ports/releases/tag/runtimes-latest)
+   release, so the pinned harbourmaster's `runtime_check` reports
+   "Unknown runtime" and cannot fetch it. Until the pin is bumped to a
+   runtime that knows RHH sources, download it manually and place it at
+   `PortMaster/libs/gmloadernext.squashfs` inside the installed pak.
 
 ## Input architecture: an honest compatibility statement (F8)
 
