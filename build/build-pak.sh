@@ -357,6 +357,51 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-devfd: F17 — BaseOS/NextUI's devtmpfs lacks the standard POSIX
+  # /dev/fd family (/dev/fd -> /proc/self/fd plus stdin/stdout/stderr).
+  # Every modern port script and every port patcher logs via bash process
+  # substitution (`exec > >(tee log.txt)`), which opens /dev/fd/N — without
+  # the symlink the exec redirection fails, every log stays 0 bytes, and
+  # downstream failures become invisible (the deltarune patcher's silent
+  # data loss was masked exactly this way; hardware-diagnosed 2026-08-23).
+  # [ -e ] guards make this a no-op on TrimUI, where the links exist.
+  # devtmpfs is per-boot, so this runs at every pak launch by design.
+  if ! grep -q 'gt-h700-devfd' "$f"; then
+    awk '{ print } $0 == "    echo \"1\" >/tmp/stay_awake" {
+      print "    # gt-h700-devfd: BaseOS lacks the POSIX /dev/fd family; bash process"
+      print "    # substitution (exec > >(tee log.txt) — every modern port script and"
+      print "    # patcher) opens /dev/fd/N and silently loses ALL logging without it."
+      print "    # devtmpfs is per-boot, so (re)create at every launch; no-op on TrimUI."
+      print "    [ -e /dev/fd ] || ln -sf /proc/self/fd /dev/fd"
+      print "    [ -e /dev/stdin ] || ln -sf /proc/self/fd/0 /dev/stdin"
+      print "    [ -e /dev/stdout ] || ln -sf /proc/self/fd/1 /dev/stdout"
+      print "    [ -e /dev/stderr ] || ln -sf /proc/self/fd/2 /dev/stderr"
+    }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-no-self-update: F22 — the GUI's self-update half-overwrites the
+  # pinned repackage: observed on-device 2026-08-23, the update's zipfile
+  # extraction died on a Text-file-busy binary after already replacing ~20
+  # control-folder files (funcs.txt, utils/, device_info.txt, a new
+  # pylibs.zip primed to clobber the patched pylibs on next launch), leaving
+  # a 2025.03/2026 chimera. Two launch.sh sides (the pugwash prompt gate is
+  # in edit_portmaster_pugwash): (1) export the env the pugwash patch reads;
+  # (2) neutralize harbourmaster's _install_portmaster with the same
+  # disable_python_function mechanism patch_pylibs already uses for
+  # portmaster_install, so even a manually-triggered update is a no-op.
+  if ! grep -q 'gt-h700-no-self-update' "$f"; then
+    awk '{ print } $0 == "export SSL_CERT_FILE=\"$PAK_DIR/files/ca-certificates.crt\"" {
+      print "export GT_DISABLE_PM_UPDATE=1  # gt-h700-no-self-update: a self-update half-overwrites the pinned repackage; see edit_portmaster_pugwash"
+    }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+    awk '{ print } $0 == "        \"$EMU_DIR/pylibs/harbourmaster/platform.py\" portmaster_install" {
+      print "    # gt-h700-no-self-update: neutralize the updater itself as well — even a"
+      print "    # user-accepted update must not overwrite the pinned repackage (a partial"
+      print "    # overwrite chimera-ed the control folder on-device 2026-08-23)."
+      print "    python3 \"$PAK_DIR/src/disable_python_function.py\" \\"
+      print "        \"$EMU_DIR/pylibs/harbourmaster/harbour.py\" _install_portmaster"
+    }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   rm -f "$f.bak"
 }
 
@@ -395,6 +440,50 @@ edit_portmaster_pugwash() { # $1=PortMaster/pugwash path
       "$f"
     rm -f "$f.bak"
   fi
+
+  # gt-h700-no-self-update: F22 — gate the periodic update prompt off
+  # entirely when launch.sh sets GT_DISABLE_PM_UPDATE=1 (it always does in
+  # this repackage). A self-update half-overwrites the pinned pak (observed
+  # on-device 2026-08-23: partial zip extraction died on a busy binary,
+  # leaving a 2025.03/2026 chimera) and any surviving pieces are re-clobbered
+  # by launch-time re-patching anyway — the prompt is a foot-gun with no
+  # working "yes" path here. Returning None takes the same no-update path the
+  # function's own network-failure branch already uses. `os` is imported by
+  # upstream pugwash (and the gt-h700-redraw patch relies on it too). Anchor
+  # is the def line — unique, upstream content, pin-safe.
+  if ! grep -q 'gt-h700-no-self-update' "$f"; then
+    awk '{ print } $0 == "def portmaster_check_update(pm, config, temp_dir):" {
+      print "    if os.environ.get(\"GT_DISABLE_PM_UPDATE\") == \"1\":  # gt-h700-no-self-update: a self-update half-overwrites the pinned repackage; launch.sh sets this env"
+      print "        return None"
+    }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+}
+
+edit_portmaster_control() { # $1=files/control.txt path
+  # gt-h700-pm-platform-helper: F19 — 2026-era port scripts call
+  # pm_platform_helper unguarded; the pinned 2025.03 runtime predates it, so
+  # every such launch logs "command not found" (and any script running under
+  # `set -e` would die outright). Upstream's current implementation (read
+  # from a 2026 funcs.txt on-device) is an effective no-op — a PM_PIPE
+  # dialog-exit plus `printf ""` — so a faithful stub is behavior-correct.
+  # Appended to files/control.txt, which install_control_txt re-installs
+  # into the live control folder at EVERY launch — also self-healing after
+  # a partial GUI self-update replaces the live copy (observed 2026-08-23).
+  f=$1
+  if ! grep -q 'gt-h700-pm-platform-helper' "$f"; then
+    cat >> "$f" <<'PMEOF'
+
+# gt-h700-pm-platform-helper: stub for 2026-era ports — the pinned 2025.03
+# runtime predates pm_platform_helper; upstream's current implementation is
+# an effective no-op (PM_PIPE dialog-exit + printf ""). See build-pak.sh.
+pm_platform_helper() {
+    if [ -e "${PM_PIPE:-}" ] && command -v PortMasterDialogExit >/dev/null 2>&1; then
+        PortMasterDialogExit
+    fi
+    printf ""
+}
+PMEOF
+  fi
 }
 
 append_controllerdb() { # $1=repo mapping file $2=target gamecontrollerdb
@@ -418,6 +507,9 @@ if [ -n "${GT_STAGE_EDIT_ONLY:-}" ]; then
       fi
       if [ -f "$GT_STAGE_EDIT_ONLY/pugwash" ]; then
         edit_portmaster_pugwash "$GT_STAGE_EDIT_ONLY/pugwash"
+      fi
+      if [ -f "$GT_STAGE_EDIT_ONLY/control.txt" ]; then
+        edit_portmaster_control "$GT_STAGE_EDIT_ONLY/control.txt"
       fi
       pm_db_dir=${GT_PM_DB_DIR:-$ASSETS}
       if [ -f "$GT_STAGE_EDIT_ONLY/gamecontrollerdb_xbox.txt" ]; then
@@ -526,6 +618,16 @@ do_portmaster() {
       || { echo "extracted $gt_openal_f is not an aarch64 shared object" >&2; exit 1; }
   done
 
+  # gt-h700-libogg: F20 — the container layer under the vorbis stack; Solarus
+  # ports (Tunics!) link it directly, and the F9/F10 vorbis libs reference it
+  # too. DT_NEEDED closure walk of solarus-1.6.5 on-device showed it as the
+  # SINGLE unresolvable soname (fix validated live: Tunics! reached its
+  # splash screen with this pushed). Same fail-closed extract as F9.
+  fetch "$PM_OGG_DEB_URL" "$PM_OGG_DEB_SHA256" "$tmp/ogg.deb"
+  ar p "$tmp/ogg.deb" data.tar.xz | tar -xJ -C "$tmp" ./usr/lib/aarch64-linux-gnu/libogg.so.0.8.4
+  file "$tmp/usr/lib/aarch64-linux-gnu/libogg.so.0.8.4" | grep -q 'shared object.*aarch64' \
+    || { echo "extracted libogg.so.0.8.4 is not an aarch64 shared object" >&2; exit 1; }
+
   # gt-h700-love-av: extract the LÖVE 11.5 runtime's AV/font/uuid chain (F10)
   # the same way — fail-closed here, before any $DIST write. All seven
   # members verified via `tar -tJ` to live under ./usr/lib/aarch64-linux-gnu/
@@ -575,6 +677,7 @@ do_portmaster() {
   edit_portmaster_launch "$assembled/launch.sh"
   edit_portmaster_device_info "$assembled/PortMaster/device_info.txt"
   edit_portmaster_pugwash "$assembled/PortMaster/pugwash"
+  edit_portmaster_control "$assembled/files/control.txt"
   append_controllerdb "$ASSETS/gamecontrollerdb-h700-xbox.txt" "$assembled/files/gamecontrollerdb_xbox.txt"
   append_controllerdb "$ASSETS/gamecontrollerdb-h700-nintendo.txt" "$assembled/files/gamecontrollerdb_nintendo.txt"
 
@@ -644,6 +747,26 @@ PMEOF
   cp "$tmp/usr/lib/aarch64-linux-gnu/libsndio.so.7.0" "$assembled/lib/libsndio.so.7.0"
   cp "$tmp/usr/lib/aarch64-linux-gnu/libbsd.so.0.11.3" "$assembled/lib/libbsd.so.0"
   cp "$tmp/usr/lib/aarch64-linux-gnu/libmd.so.0.0.4" "$assembled/lib/libmd.so.0"
+
+  # gt-h700-libogg: F20 — SONAME-named real file, same vfat-no-symlinks rule.
+  cp "$tmp/usr/lib/aarch64-linux-gnu/libogg.so.0.8.4" "$assembled/lib/libogg.so.0"
+
+  # gt-h700-7zzs: F18 — modern port patchscripts (deltarune, the RHH
+  # GameMaker ports) invoke "$controlfolder/7zzs.$DEVICE_ARCH" for archive
+  # surgery. ben16w's repackage ships 7zzs.aarch64 only inside
+  # files/bin.tar.gz (unpacked to bin/ at first boot, which is NOT the
+  # control folder), so the call failed silently — the deltarune patcher
+  # then shipped empty skeleton APKs and DELETED the user's data.win files
+  # (observed on-device 2026-08-23; the failure was invisible until F17
+  # restored patcher logging). Stage the same pinned binary into
+  # PortMaster/ at build time, fail-closed like every other staged file.
+  mkdir -p "$tmp/binx"
+  tar -xzf "$assembled/files/bin.tar.gz" -C "$tmp/binx" 7zzs.aarch64 2>/dev/null \
+    || tar -xzf "$assembled/files/bin.tar.gz" -C "$tmp/binx" ./7zzs.aarch64
+  cp "$tmp/binx/7zzs.aarch64" "$assembled/PortMaster/7zzs.aarch64"
+  chmod +x "$assembled/PortMaster/7zzs.aarch64"
+  file "$assembled/PortMaster/7zzs.aarch64" | grep -q 'aarch64' \
+    || { echo "staged 7zzs.aarch64 is not an aarch64 binary" >&2; exit 1; }
 
   # gt-h700-love-av: F10 — the LÖVE 11.5 runtime's liblove links
   # vorbisfile/theoradec/mpg123 (readelf-verified) with pixman/fontconfig/uuid

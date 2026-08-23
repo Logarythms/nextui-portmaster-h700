@@ -1,0 +1,27 @@
+#!/bin/sh
+
+CUR_TTY=/dev/tty0
+
+controlfolder="$EMU_DIR"
+directory="$TEMP_DATA_DIR"
+
+PM_SCRIPTNAME="$(basename "${PM_SCRIPTNAME:-$0}")"
+PM_PORTNAME="${PM_SCRIPTNAME%.sh}"
+
+if [ -z "$PM_PORTNAME" ]; then
+  PM_PORTNAME="Port"
+fi
+
+ESUDO=""
+ESUDOKILL="-1"
+export SDL_GAMECONTROLLERCONFIG_FILE="/$controlfolder/gamecontrollerdb.txt"
+
+get_controls() {
+  sleep 0.1
+}
+
+. $controlfolder/device_info.txt
+. $controlfolder/funcs.txt
+
+GPTOKEYB2="$ESUDO env LD_PRELOAD=$EMU_DIR/libinterpose.aarch64.so $controlfolder/gptokeyb2 $ESUDOKILL"
+GPTOKEYB="$ESUDO $controlfolder/gptokeyb $ESUDOKILL"

@@ -1,9 +1,12 @@
 # SYNTHETIC fixture — NOT the full real pugwash (the real 2.13.0 file is
-# 100KB+). This exists only so the unit tests have the exact anchor line
+# 100KB+). This exists only so the unit tests have the exact anchor lines
 # this repo's edit_portmaster_pugwash (build/build-pak.sh) contracts on, in
-# realistic context (a do_draw method with the 12-space
-# `if not self.updated:` guard it sed-replaces). The real file's anchor is
-# verified separately by hands-on hardware-gate testing, not by this fixture.
+# realistic context: a do_draw method with the 12-space
+# `if not self.updated:` guard it sed-replaces (F6), and the
+# portmaster_check_update def line the F22 no-self-update gate inserts
+# after (function opening mirrors the real 2025.03 file). The real file's
+# anchors are verified separately by hands-on hardware-gate testing, not by
+# this fixture.
 import os
 
 
@@ -15,3 +18,14 @@ class Screen:
 
             if self.draw_counter > 30:
                 return
+
+
+def portmaster_check_update(pm, config, temp_dir):
+    cfg_dir = harbourmaster.HM_TOOLS_DIR / "PortMaster"
+
+    cfg_file = cfg_dir / "config" / "config.json"
+    cfg_data = {}
+
+    if cfg_file.is_file():
+        with open(cfg_file, 'r') as fh:
+            cfg_data = json.load(fh)

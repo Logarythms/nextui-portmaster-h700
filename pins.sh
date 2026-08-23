@@ -79,6 +79,17 @@ PM_LIBBSD_DEB_URL="http://deb.debian.org/debian/pool/main/libb/libbsd/libbsd0_0.
 PM_LIBBSD_DEB_SHA256=614d36d41b670955a75526865bd321703f2accb6e0c07ee4c283fbba12e494df
 PM_LIBMD_DEB_URL="http://deb.debian.org/debian/pool/main/libm/libmd/libmd0_1.0.3-3_arm64.deb"
 PM_LIBMD_DEB_SHA256=3c490cdcce9d25e702e6587b6166cd8e7303fce8343642d9d5d99695282a9e5c
+# fix F20 (2026-08-23), same "h700 lib gap" story: libogg is the container
+# layer under the whole vorbis stack, and Solarus-engine ports (Tunics!) link
+# it DIRECTLY — a full DT_NEEDED closure walk of solarus-1.6.5 on-device
+# showed libogg.so.0 as the single unresolvable soname (the F9/F10 rounds
+# shipped vorbis/vorbisfile, which also reference libogg, without it; LÖVE
+# never faulted only because its liblove bundles its own decoder path).
+# .deb sha is the .deb's own sha256, double-download cross-checked and
+# matched against Packages.xz on the first try (no debian-security fallback
+# needed this round).
+PM_OGG_DEB_URL="http://deb.debian.org/debian/pool/main/libo/libogg/libogg0_1.3.4-0.1_arm64.deb"
+PM_OGG_DEB_SHA256=910d1f3893a9340ea83bf19deebbc4e0d2362f22c274c2c2d3f00e4ba386c871
 # gate finding F10 (2026-08-22): the LÖVE 11.5 runtime's liblove links
 # vorbisfile/theoradec/mpg123 (readelf-verified) with pixman/fontconfig/uuid
 # pulled in transitively; TrimUI provides them, h700 doesn't. Gate-validated

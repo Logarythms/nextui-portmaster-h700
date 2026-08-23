@@ -61,6 +61,22 @@ assert_eq "$(grep -c 'inject_trimui_lib_path() {' "$work/launch.sh")" "1" "one f
 assert_eq "$(grep -c '| inject_trimui_lib_path' "$work/launch.sh")" "2" "both upstream call sites intact"
 # the old hardcoded per-line append body must be gone
 assert_not_contains "$work/launch.sh" ':/usr/trimui/lib"|g'
+
+# --- F21: the injected suffix now carries the pak's own lib/ as well ---
+# Ports that hard-reset LD_LIBRARY_PATH lose every pak-shipped compat lib
+# (Tunics!/Solarus faulted on libopenal.so.1 while the pak carried it,
+# hardware-diagnosed 2026-08-23). Pak lib/ appends LAST (lowest priority),
+# and the per-file idempotency guard keys on the pak-lib suffix so scripts
+# injected by a pre-F21 pak (SYSTEM_LIB_DIR present, pak lib absent) are
+# re-injected rather than skipped.
+# (the sed line escapes the closing quote, so match up to the lib suffix)
+# shellcheck disable=SC2016
+assert_contains "$work/launch.sh" ':$SYSTEM_LIB_DIR:$PAK_DIR/lib'
+# shellcheck disable=SC2016
+assert_contains "$work/launch.sh" 'grep -q "$PAK_DIR/lib" "$file" && continue'
+# the old guard shape (keyed on SYSTEM_LIB_DIR) must be gone
+# shellcheck disable=SC2016
+assert_not_contains "$work/launch.sh" 'grep -q "$SYSTEM_LIB_DIR" "$file" && continue'
 sh -n "$work/launch.sh" || { echo "edited launch.sh does not parse"; exit 1; }
 
 # --- idempotency ---

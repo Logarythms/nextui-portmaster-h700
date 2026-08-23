@@ -147,6 +147,52 @@ assert_eq "$(grep -c 'gt-h700-presenter-sync' "$work/launch.sh")" "1" "presenter
 assert_not_contains "$work/launch.sh" 'show_message "Applying changes, please wait..." &'
 assert_contains "$work/launch.sh" 'show_message "Applying changes, please wait..."  # gt-h700-presenter-sync'
 
+# --- launch.sh: F17 gt-h700-devfd — POSIX /dev/fd family created at launch ---
+# BaseOS/NextUI's devtmpfs lacks /dev/fd (+ stdin/stdout/stderr). Every
+# modern port script and patcher logs via bash process substitution
+# (exec > >(tee log.txt)), which opens /dev/fd/N — without the symlink the
+# exec redirection fails and ALL port/patch logging is silently lost
+# (0-byte log.txt everywhere; the deltarune patcher's data loss was masked
+# exactly this way; hardware-diagnosed 2026-08-23). Created inside main()
+# right after the stay_awake write, [ -e ] guarded (no-op on TrimUI),
+# re-created per boot by design (devtmpfs is volatile).
+assert_eq "$(grep -c 'gt-h700-devfd' "$work/launch.sh")" "1" "devfd marker present once"
+assert_contains "$work/launch.sh" '\[ -e /dev/fd \] || ln -sf /proc/self/fd /dev/fd'
+assert_contains "$work/launch.sh" '\[ -e /dev/stdin \] || ln -sf /proc/self/fd/0 /dev/stdin'
+assert_contains "$work/launch.sh" '\[ -e /dev/stdout \] || ln -sf /proc/self/fd/1 /dev/stdout'
+assert_contains "$work/launch.sh" '\[ -e /dev/stderr \] || ln -sf /proc/self/fd/2 /dev/stderr'
+stay_awake_line=$(grep -n '/tmp/stay_awake' "$work/launch.sh" | head -1 | cut -d: -f1)
+devfd_line=$(grep -n 'ln -sf /proc/self/fd /dev/fd' "$work/launch.sh" | head -1 | cut -d: -f1)
+trap_line=$(grep -n 'trap "cleanup" EXIT INT TERM HUP QUIT' "$work/launch.sh" | head -1 | cut -d: -f1)
+[ "$stay_awake_line" -lt "$devfd_line" ] || { echo "gt-h700-devfd is not after the stay_awake write"; exit 1; }
+[ "$devfd_line" -lt "$trap_line" ] || { echo "gt-h700-devfd is not before the cleanup trap (i.e. not inside main's prologue)"; exit 1; }
+
+# --- F22 gt-h700-no-self-update — the GUI self-update is fully disarmed ---
+# A self-update half-overwrites the pinned repackage (observed on-device
+# 2026-08-23: partial zip extraction died on a Text-file-busy binary,
+# leaving a 2025.03/2026 chimera control folder). Three coordinated edits:
+# (1) launch.sh exports GT_DISABLE_PM_UPDATE=1; (2) pugwash's
+# portmaster_check_update early-returns on that env (prompt never shows);
+# (3) patch_pylibs additionally no-ops harbourmaster's _install_portmaster
+# via the same disable_python_function mechanism upstream ben16w already
+# uses for portmaster_install — so even a manually-triggered update path
+# cannot write over the pak.
+assert_eq "$(grep -c 'gt-h700-no-self-update' "$work/launch.sh")" "2" "no-self-update: env export + pylibs disable in launch.sh"
+assert_contains "$work/launch.sh" 'export GT_DISABLE_PM_UPDATE=1'
+# shellcheck disable=SC2016
+assert_contains "$work/launch.sh" '"$EMU_DIR/pylibs/harbourmaster/harbour.py" _install_portmaster'
+ssl_line=$(grep -n 'export SSL_CERT_FILE=' "$work/launch.sh" | head -1 | cut -d: -f1)
+disupd_line=$(grep -n 'export GT_DISABLE_PM_UPDATE=1' "$work/launch.sh" | head -1 | cut -d: -f1)
+[ "$ssl_line" -lt "$disupd_line" ] || { echo "GT_DISABLE_PM_UPDATE export is not after SSL_CERT_FILE"; exit 1; }
+platform_disable_line=$(grep -n 'platform.py" portmaster_install' "$work/launch.sh" | head -1 | cut -d: -f1)
+harbour_disable_line=$(grep -n 'harbour.py" _install_portmaster' "$work/launch.sh" | head -1 | cut -d: -f1)
+[ "$platform_disable_line" -lt "$harbour_disable_line" ] || { echo "harbour.py disable is not after the upstream platform.py disable (i.e. not inside patch_pylibs)"; exit 1; }
+assert_eq "$(grep -c 'gt-h700-no-self-update' "$work/pugwash")" "1" "no-self-update marker present once in pugwash"
+assert_contains "$work/pugwash" 'os.environ.get("GT_DISABLE_PM_UPDATE")'
+def_line=$(grep -n '^def portmaster_check_update(pm, config, temp_dir):$' "$work/pugwash" | head -1 | cut -d: -f1)
+gate_line=$(grep -n 'GT_DISABLE_PM_UPDATE' "$work/pugwash" | head -1 | cut -d: -f1)
+assert_eq "$((def_line + 1))" "$gate_line" "update gate is the first line inside portmaster_check_update"
+
 # --- idempotency ---
 GT_STAGE_EDIT_ONLY="$work" sh "$ROOT/build/build-pak.sh" portmaster
 assert_eq "$(grep -c 'gt-h700-redraw' "$work/pugwash")" "1" "redraw marker idempotent"
@@ -159,6 +205,9 @@ assert_eq "$(grep -c 'gt-h700-shebang-guard' "$work/launch.sh")" "1" "shebang-gu
 assert_eq "$(grep -c 'gt-h700-presenter-kill' "$work/launch.sh")" "3" "presenter-kill marker idempotent"
 assert_eq "$(grep -c 'gt-h700-presenter-quiesce' "$work/launch.sh")" "1" "presenter-quiesce marker idempotent"
 assert_eq "$(grep -c 'gt-h700-presenter-sync' "$work/launch.sh")" "1" "presenter-sync marker idempotent"
+assert_eq "$(grep -c 'gt-h700-devfd' "$work/launch.sh")" "1" "devfd marker idempotent"
+assert_eq "$(grep -c 'gt-h700-no-self-update' "$work/launch.sh")" "2" "no-self-update launch.sh markers idempotent"
+assert_eq "$(grep -c 'gt-h700-no-self-update' "$work/pugwash")" "1" "no-self-update pugwash marker idempotent"
 python3 -c "import ast; ast.parse(open('$work/pugwash').read())" \
   || { echo "patched pugwash does not parse after rerun"; exit 1; }
 sh -n "$work/launch.sh" || { echo "edited launch.sh does not parse after rerun"; exit 1; }
