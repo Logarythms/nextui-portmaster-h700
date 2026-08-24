@@ -265,6 +265,52 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-launcher-mtime: F32 — run_port patches the launched .sh in place
+  # (update_file_shebang + the /roms/ports/PortMaster path rewrite). That is
+  # necessary, but copy_game_scripts reverts the ROM_DIR launcher to its
+  # pristine .ports source after every PortMaster-GUI session (cp -fp), so the
+  # edits re-fire on the next launch and their sed -i bumps the launcher mtime.
+  # LOVE-patch ports test $0 (the launcher) as a rebuild source in needs_build
+  # — Balatro (hardware-diagnosed 2026-08-24) and UFO 50 — so a purely cosmetic
+  # re-patch forced a full, minutes-long rebuild after any GUI session. The
+  # F12b gt-h700-shebang-guard only skipped the shebang rewrite when it was
+  # already correct; the reverted launcher is NOT correct, and the path rewrite
+  # had no guard at all, so neither stopped the loop. Wrap the three ROM_PATH
+  # edits in an mtime snapshot/restore: content still changes, mtime does not,
+  # so the pristine source mtime stays authoritative (a genuine port update,
+  # which bumps that source mtime and is propagated by cp -fp, still rebuilds).
+  # Anchored on run_port's opening echo (snapshot) and the directory= line that
+  # begins GAMEDIR resolution (restore) — one awk pass, so a single marker
+  # guards both inserts and the restore always runs before the No-GAMEDIR exit.
+  if ! grep -q 'gt-h700-launcher-mtime' "$f"; then
+    awk '
+    $0 == "    echo \"Starting PortMaster with port: $ROM_PATH\"" {
+      print
+      print "    # gt-h700-launcher-mtime: run_port re-patches the launched .sh in place"
+      print "    # (shebang + the \"/roms/ports/PortMaster\" path). copy_game_scripts reverts"
+      print "    # that launcher to its pristine .ports source after every PortMaster-GUI"
+      print "    # session (cp -fp), so both edits re-fire next launch and bump the mtime"
+      print "    # of $0. LOVE-patch ports key rebuild-if-source-newer on $0 (Balatro and"
+      print "    # UFO 50 list \"$LAUNCHER\" in needs_build), so a cosmetic re-patch forced a"
+      print "    # full, minutes-long rebuild after any GUI session. Snapshot the launcher"
+      print "    # mtime and restore it just below the edits so the pristine source mtime"
+      print "    # stays authoritative (a genuine port update still rebuilds). Completes the"
+      print "    # F12b shebang guard, which the unguarded path rewrite defeated."
+      print "    # DELIBERATELY UNCONDITIONAL (no h700 guard): a no-op mtime bump is wrong"
+      print "    # upstream everywhere (same reasoning as gt-h700-cp-preserve)."
+      print "    gt_launcher_mtime_ref=\"$(mktemp)\""
+      print "    touch -r \"$ROM_PATH\" \"$gt_launcher_mtime_ref\""
+      next
+    }
+    $0 == "    directory=\"${TEMP_DATA_DIR#/}\"" {
+      print "    touch -r \"$gt_launcher_mtime_ref\" \"$ROM_PATH\"  # gt-h700-launcher-mtime: restore the pre-patch mtime (see snapshot at run_port head)"
+      print "    rm -f \"$gt_launcher_mtime_ref\""
+      print
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-presenter-kill: F15 — every in-pak kill of the presenter via the
   # upstream killall silently no-ops: create_busybox_wrappers + the pak PATH
   # shadow it with the pinned bullseye busybox, whose killall never matches

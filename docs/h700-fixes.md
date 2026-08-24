@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F31) below match the internal numbering used while these were
+Fix IDs (F1–F32) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. A closing section records the ports
 that this platform genuinely can't run.
@@ -160,7 +160,7 @@ testing, twice, to an installed game. Fix: before mounting, unmount
 every stale layer in a loop, matching case-insensitively so the
 comparison actually works, then mount exactly once.
 
-## Ports re-patch themselves on every single launch (F12/F13)
+## Ports re-patch themselves on every launch, then after every GUI session (F12/F13/F32)
 
 Several ports (again, LÖVE-based ones in particular) only re-run their
 one-time setup/patch step when their launcher script's on-disk
@@ -179,6 +179,30 @@ anything actually changed:
 Fix: preserve timestamps on the copy, and skip the shebang rewrite when
 it's already a no-op. Two consecutive launches of the same port then
 correctly skip the expensive setup step the second time.
+
+That closed the *per-launch* loop but not a slower one that surfaced
+later (F32, Balatro hardware-diagnosed 2026-08-24). Whenever the
+PortMaster GUI is opened, the wrapper's post-GUI cleanup re-publishes
+every port launcher from its pristine install copy — reverting both the
+shebang and the `/roms/ports/PortMaster` path rewrite that the wrapper
+applies at launch time. So the *next* launch of a port re-applies those
+two edits, and either one bumps the launcher's modification time to
+"now". LÖVE-patch ports whose rebuild check lists the launcher itself as
+a source (Balatro and UFO 50 both do) then see a launcher newer than the
+built game and do a full, minutes-long rebuild — after every GUI
+session, even though nothing about the game changed. The F12/F13 shebang
+guard didn't help here: the reverted launcher's shebang is genuinely
+wrong again, and the path rewrite never had a guard at all.
+
+Fix (F32): the launch step that patches a port's launcher now snapshots
+the launcher's modification time before its in-place edits and restores
+it afterward. The launcher's content still gets patched; its timestamp
+stays pinned to the pristine install copy, which is always older than an
+already-built game — so a no-op re-patch no longer triggers a rebuild. A
+genuine port update still bumps the install copy's timestamp (carried
+through by the timestamp-preserving copy), so real updates still rebuild
+correctly. This is deliberately unconditional (not h700-only): a no-op
+timestamp bump is wrong on every platform.
 
 ## GUI freezes into "repaints only on keypress" (F14/F15/F16)
 
