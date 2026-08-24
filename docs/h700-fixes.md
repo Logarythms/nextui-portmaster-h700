@@ -470,6 +470,43 @@ Diagnostic note for future spelunking: the pak session log
 (`.userdata/h700/logs/PORTS.txt`) is truncated per launch — evidence
 from a failed attempt is gone by the time the next launch starts.
 
+## Silent FMOD ports: the single-client audio codec (F30)
+
+Pizza Tower ran fine on the reference device but was completely silent —
+while every other port, and the store GUI itself, had working sound. The
+same port has audio on an RG DS (ROCKNIX), where PortMaster is officially
+supported, which pointed at a device difference rather than a port bug.
+
+The h700 kernel is built without System V IPC, so ALSA cannot construct a
+`dmix` (software-mixing) device: the audio codec is single-client — exactly
+one process may hold `hw:audiocodec` at a time. A GameMaker port that ships
+FMOD opens the codec twice: first the gmloadernext runner's own
+GameMaker-native audio device (a plain playback open at ~22 kHz), then
+FMOD's `FMOD_SDL` output plugin (48 kHz, requesting
+`SDL_AUDIO_ALLOW_FORMAT_CHANGE`). The runner wins the race and holds the
+device, so FMOD_SDL's open fails with `Device or resource busy` and FMOD —
+where the game routes all of its sound — ends up with no output. The RG DS
+escapes this because ROCKNIX runs PulseAudio, which is shareable. The
+failure is FMOD-wide on this device, not specific to Pizza Tower.
+
+Fix: a small `LD_PRELOAD` shim (`gt-fmod-audio.so`, built from
+`assets/gt-fmod-audio.c`) that interposes `SDL_OpenAudioDevice` and
+suppresses the runner's own open — returning failure so the runner proceeds
+without native audio — which leaves the single codec free for FMOD_SDL to
+grab. FMOD_SDL is told apart by the `ALLOW_FORMAT_CHANGE` flag it always
+sets and the runner never does; capture opens are never touched. `run_port`
+preloads it automatically for any port that carries `libs/libfmod*.so*`
+(only gmloadernext FMOD ports do), so there is no per-port list and
+non-FMOD ports are untouched. `GT_FMOD_AUDIO_DEBUG=1` traces each decision
+to the pak log. Hardware-verified on the RG SP (Pizza Tower, sound in-game,
+2026-08-24).
+
+Trade-off: the runner's own GameMaker-native audio is lost. FMOD-shipping
+ports route all sound through FMOD, so in practice nothing is; a port that
+mixed runner-native and FMOD audio would lose the runner-native half. The
+real fix belongs upstream — a shareable audio path (a userspace mixer, or
+FMOD_SDL learning to share the device) — and is on the follow-up list.
+
 ## Input architecture: an honest compatibility statement (F8)
 
 NextUI's SDL2 build on h700 does not deliver PortMaster's usual

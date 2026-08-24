@@ -501,6 +501,36 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-fmod-audio: F30 — preload the FMOD-audio shim for gmloadernext FMOD
+  # ports. The h700 audio codec is single-client (no SysV IPC => no ALSA dmix),
+  # so a GameMaker port that ships FMOD opens it twice — the runner's own audio
+  # device first, then FMOD_SDL — and the runner wins the race, leaving FMOD
+  # (and thus the whole game's sound, which routes through FMOD) silent. The
+  # shim suppresses the runner's non-FMOD_SDL open so FMOD_SDL gets the device.
+  # The same ports have sound on an RG DS because ROCKNIX runs shareable
+  # PulseAudio. Diagnosed + hardware-verified on the RG SP (Pizza Tower,
+  # 2026-08-24). Auto-gated, no per-port list: only ports carrying
+  # libs/libfmod*.so* get it, so non-FMOD ports are untouched. Placed in the
+  # same run_port window as gt-h700-port-remap; order between the two is
+  # irrelevant (disjoint interposed symbols, both prepend LD_PRELOAD).
+  if ! grep -q 'gt-h700-fmod-audio' "$f"; then
+    awk '$0 == "    \"$PAK_DIR/bin/bash\" \"$ROM_PATH\"" {
+      print "    # gt-h700-fmod-audio: FMOD ports open the single-client h700 codec twice"
+      print "    # (the runner audio first, then FMOD_SDL) and the runner wins, so FMOD"
+      print "    # is silent. Preload the shim that suppresses the runner non-FMOD_SDL"
+      print "    # open so FMOD_SDL gets the codec. Auto-gated on the FMOD libs a port"
+      print "    # ships, so non-FMOD ports are untouched."
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && ls \"$GAMEDIR\"/libs/libfmod*.so* >/dev/null 2>&1; then"
+      print "        echo \"Preloading gt-fmod-audio.so for $ROM_NAME (FMOD port)\""
+      print "        export LD_PRELOAD=\"$PAK_DIR/lib/gt-fmod-audio.so${LD_PRELOAD:+:$LD_PRELOAD}\""
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-source-heal: F29 — harbourmaster recreates its default
   # *.source.json files ONLY on first-run or a config-version migration
   # (harbour.py: the first-run branch writes HM_SOURCE_DEFAULTS;
@@ -871,6 +901,7 @@ PMEOF
   # E7: ship the remap shim; preloaded only via the gt-h700-remap-hook flag.
   mkdir -p "$assembled/lib"
   cp "$ASSETS/gt-input-remap.so" "$assembled/lib/gt-input-remap.so"
+  cp "$ASSETS/gt-fmod-audio.so" "$assembled/lib/gt-fmod-audio.so"
 
   # gt-h700-port-remap: F25 — pak-shipped default list of ports that get the
   # shim preloaded at launch (read by the run_port hook that

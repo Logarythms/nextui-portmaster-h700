@@ -49,6 +49,7 @@ Confirmed working out of the box on the RG SP:
 - [Celeste](https://portmaster.games/detail.html?name=celeste)
 - [Deltarune](https://portmaster.games/detail.html?name=deltarune)
 - [Downwell](https://portmaster.games/detail.html?name=downwell)
+- [Pizza Tower](https://portmaster.games/detail.html?name=pizzatower) (its FMOD sound is fixed automatically — see below)
 - [Tunics!](https://portmaster.games/detail.html?name=tunics_pm) (via the built-in input translator — automatic)
 - [UFO 50](https://github.com/JeodC/RHH-Ports/tree/main/ports/released/gamemakerengine/ufo50) (an [RHH port](https://github.com/JeodC/RHH-Ports); first launch patches for ~1.5 hours)
 - [Undertale](https://portmaster.games/detail.html?name=undertale)
@@ -67,6 +68,8 @@ Gamepad input on this platform has limits, so ports fall into three groups:
 - ⚠️ **With a little setup** — ports that read raw joystick input, and keyboard-style ports (the ones whose title screen asks for a key like SPACE): both are handled by the built-in input translator — see [Fixing games that ignore your buttons](#fixing-games-that-ignore-your-buttons).
 - ❌ **Not yet** — ports that *poll* keyboard or button state instead of listening for presses.
 
+Sound works out of the box too, including GameMaker ports that use FMOD (like Pizza Tower): the h700's audio chip only lets one program use it at a time, which normally leaves FMOD silent, and the pak works around that automatically for any FMOD port — nothing to turn on.
+
 Full details: [`docs/h700-fixes.md`](docs/h700-fixes.md).
 
 ## Build from source
@@ -78,7 +81,7 @@ make pak     # builds dist/Emus/h700/PORTS.pak.zip from pinned, checksum-verifie
 make test    # runs the shell test suite
 ```
 
-The input-remap shim ships prebuilt in `assets/`; rebuilding it (`make shim`) needs Docker.
+The `LD_PRELOAD` shims (input-remap and FMOD-audio) ship prebuilt in `assets/`; rebuilding them (`make shim`) needs Docker.
 
 ## Fixing games that ignore your buttons
 
