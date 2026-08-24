@@ -68,9 +68,9 @@ Each link is the game's port page, with what you need to provide (e.g. purchased
 
 A few ports need capabilities the RG SP's system image doesn't provide (each verified against an officially-supported device — it's the platform, not the port):
 
-- **Alex the Allegator 1** — needs the Panfrost graphics driver; the RG SP only has the closed mali driver.
-- **Mage Recall** — needs the Panfrost graphics driver.
-- **Momodora: Reverie under the Moonlight** — needs x86 emulation plus Panfrost.
+- **Alex the Allegator 1** — needs a Wayland/DRM display path the RG SP's kernel doesn't provide (it has only the legacy framebuffer).
+- **Mage Recall** — needs the same Wayland/DRM display path.
+- **Momodora: Reverie under the Moonlight** — needs x86 emulation plus that display path.
 - **Curseball** — needs a 32-bit graphics stack the RG SP lacks.
 
 Details in [`docs/h700-fixes.md`](docs/h700-fixes.md#ports-this-platform-cant-run).

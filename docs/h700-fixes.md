@@ -599,19 +599,37 @@ report can be answered quickly. All four below were checked against a ROCKNIX
 device (officially PortMaster-supported) to separate "the port is broken" from
 "this platform can't host it" — in every case it's the latter.
 
-- **Weston + Mesa/Panfrost ports** — e.g. *Alex the Allegator 1*, *Mage
-  Recall*. These launch a bundled Weston compositor and render through the
-  Crusty GL shim, which targets the open-source Mesa/Panfrost driver. Two walls
-  on NextUI-h700: Weston's libinput backend needs a `udev`/`seatd` stack the
-  image has no part of (it finds no input devices and aborts), and the render
-  path wants Mesa/Panfrost while the image ships only the proprietary mali blob
-  on an old Allwinner 4.9 kernel. On the ROCKNIX device both ports run once the
-  GPU driver is switched to Panfrost. Bringing Panfrost to NextUI would mean a
-  full Mesa stack plus a kernel DRM driver the vendor kernel lacks — out of
-  scope for a pak.
+- **Weston ports** — e.g. *Alex the Allegator 1*, *Mage Recall*. These launch a
+  bundled Weston compositor (the *Westonpack* runtime, `weston_pkg_0.2`) and
+  render through the Crusty GL shim. A 2026-08-25 on-device spike corrected an
+  earlier, coarser reading of why they fail — the real blocker is **display
+  scanout**, not input and not GPU rendering:
+    - *Not input.* The compositor comes up fine on the `headless` backend with
+      the bundled `seatd` — no `udev` needed — once one missing library,
+      `libevdev.so.2`, is supplied (the runtime bundles `libinput` but not
+      `libevdev`). That absent `.so` was the entire reason `wp_weston` wouldn't
+      even load; with it, Weston 13 reaches "xserver listening on display :0".
+    - *Not GPU rendering.* The pak already ships **gl4es** as `libGL.so.1`, and
+      it initializes on the h700's proprietary mali blob (desktop GL 2.1 over
+      GLES) — the closed driver is enough to render.
+    - *The wall is present/scanout.* The h700's Allwinner 4.9 kernel exposes
+      only the legacy framebuffer (`/dev/fb0`) and the sunxi `/dev/disp` ioctl
+      device — there is **no DRM/KMS** (`/sys/class/drm` is absent; `lsmod`
+      shows `mali_kbase` for rendering but no display driver). Weston 13 has no
+      fbdev backend (only drm/headless/wayland/x11), and Crusty presents only
+      via DRM+GBM. The one scanout path the device does have — the mali blob's
+      own fbdev EGL, which every native GLES port here uses — is exactly the one
+      Weston and Crusty cannot drive, so a Weston-hosted frame has no route to
+      the panel. On a ROCKNIX device these run because its kernel provides
+      DRM/KMS (sun4i-drm / Panfrost).
+    - *What would actually help* (all beyond a repackaging fix): an
+      fbdev/sunxi-disp present frontend added to Crusty; a sun50i DRM/KMS driver
+      in the NextUI kernel; or — per-port, and only where the game doesn't need
+      an X server — bypassing Weston to run on SDL2 + gl4es-fbdev + the mali
+      fbdev EGL (the native path). Westonpack itself does not target NextUI/minui.
 - **box64 ports** — e.g. *Momodora: Reverie under the Moonlight* (an RHH
   port). These emulate an x86-64 Linux binary through box64 *and* use the
-  Weston/Panfrost stack above, so they inherit both walls; the box64 runtime is
+  Weston stack above, so they inherit its scanout wall; the box64 runtime is
   additionally an RHH-specific artifact the pinned harbourmaster can't fetch
   (like `gmloadernext`, it would need manual placement — and even official
   PortMaster on ROCKNIX has no button to install it).
