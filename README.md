@@ -45,11 +45,15 @@ Confirmed working out of the box on the RG SP:
 - [2048 Plus](https://portmaster.games/detail.html?name=2048plus) (the *Plus* version — **not** the regular 2048)
 - [Apotris](https://portmaster.games/detail.html?name=apotris)
 - [Balatro](https://portmaster.games/detail.html?name=balatro)
+- [BYTEPATH](https://portmaster.games/detail.html?name=bytepath) (via the built-in input translator — automatic)
 - [Cave Story (Evo)](https://portmaster.games/detail.html?name=cave.story-evo) (the *Evo* version — **not** "Cave Story lr", which can't run here)
 - [Celeste](https://portmaster.games/detail.html?name=celeste)
 - [Deltarune](https://portmaster.games/detail.html?name=deltarune)
 - [Downwell](https://portmaster.games/detail.html?name=downwell)
+- [Lasagna Boy Classic](https://portmaster.games/detail.html?name=lasagnaboyclassic) (via the built-in input translator — automatic)
 - [Pizza Tower](https://portmaster.games/detail.html?name=pizzatower) (its FMOD sound is fixed automatically — see below)
+- [Road Invaders](https://portmaster.games/detail.html?name=road.invaders) (via the built-in input translator — automatic)
+- [The Starlit Escape](https://portmaster.games/detail.html?name=thestarlitescape) (via the built-in input translator — automatic)
 - [Tunics!](https://portmaster.games/detail.html?name=tunics_pm) (via the built-in input translator — automatic)
 - [UFO 50](https://github.com/JeodC/RHH-Ports/tree/main/ports/released/gamemakerengine/ufo50) (an [RHH port](https://github.com/JeodC/RHH-Ports); first launch patches for ~1.5 hours)
 - [Undertale](https://portmaster.games/detail.html?name=undertale)
@@ -60,13 +64,24 @@ Each link is the game's port page, with what you need to provide (e.g. purchased
 
 **Games not on this list may still work** — this is only what's been verified so far. The list will grow as more are confirmed; if you get another one working, please open an issue.
 
+## Incompatible games
+
+A few ports need capabilities the RG SP's system image doesn't provide (each verified against an officially-supported device — it's the platform, not the port):
+
+- **Alex the Allegator 1** — needs the Panfrost graphics driver; the RG SP only has the closed mali driver.
+- **Mage Recall** — needs the Panfrost graphics driver.
+- **Momodora: Reverie under the Moonlight** — needs x86 emulation plus Panfrost.
+- **Curseball** — needs a 32-bit graphics stack the RG SP lacks.
+
+Details in [`docs/h700-fixes.md`](docs/h700-fixes.md#ports-this-platform-cant-run).
+
 ## What works
 
 Gamepad input on this platform has limits, so ports fall into three groups:
 
 - ✅ **Out of the box** — ports using SDL's GameController API. LÖVE-based games also work.
 - ⚠️ **With a little setup** — ports that read raw joystick input, and keyboard-style ports (the ones whose title screen asks for a key like SPACE): both are handled by the built-in input translator — see [Fixing games that ignore your buttons](#fixing-games-that-ignore-your-buttons).
-- ❌ **Not yet** — ports that *poll* keyboard or button state instead of listening for presses.
+- ❌ **Not yet** — the rare port that *polls* raw joystick button state directly. (Keyboard-polling ports, like BYTEPATH, now work — the translator keeps the keyboard state in sync.)
 
 Sound works out of the box too, including GameMaker ports that use FMOD (like Pizza Tower): the h700's audio chip only lets one program use it at a time, which normally leaves FMOD silent, and the pak works around that automatically for any FMOD port — nothing to turn on.
 
@@ -99,7 +114,9 @@ arrow keys, and so on. When the translator is enabled for a game, that game's
 own mapping file is picked up automatically. You never have to write a
 mapping yourself.
 
-Games on the built-in list (currently: **Tunics!**) need no setup at all.
+Games on the built-in list need no setup at all — currently **Tunics!**,
+**BYTEPATH**, **Lasagna Boy Classic**, **Road Invaders**, and
+**The Starlit Escape**.
 
 ### Turning it on for another game
 

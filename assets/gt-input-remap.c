@@ -220,6 +220,34 @@ static int gt_hat_edges(int prev, int cur, int *out_slot, int *out_pressed) {
     return n;
 }
 
+/* ---- v3 state-polling half (no SDL types; host-testable) --------------
+ * The v2 half synthesizes SDL key EVENTS, which only games that consume the
+ * event stream (love.keypressed, SDL_PollEvent loops) ever see. Games that
+ * POLL key state instead — SDL_GetKeyboardState, i.e. love.keyboard.isDown —
+ * read SDL's internal keystate array, which the fabricated events never
+ * touch, so their in-game input stays dead (BYTEPATH: menus work off events,
+ * gameplay polls). Maintain a synthetic keystate array (indexed by SDL
+ * scancode) that the interposed SDL_GetKeyboardState merges over SDL's real
+ * state. */
+#define GT_NUM_SCANCODES 512
+
+/* Set/clear one scancode in the synthetic keystate; out-of-range is a no-op
+ * (SDL scancodes are bounded by GT_NUM_SCANCODES). */
+static void gt_synth_set(unsigned char *state, int scancode, int pressed) {
+    if (scancode >= 0 && scancode < GT_NUM_SCANCODES)
+        state[scancode] = (unsigned char)(pressed ? 1 : 0);
+}
+
+/* Merge SDL's real keystate with the synthetic one into out[0..n): a key is
+ * down if either source has it down. n is clamped to GT_NUM_SCANCODES. */
+static void gt_merge_keystate(unsigned char *out, const unsigned char *real,
+                              const unsigned char *synth, int n) {
+    int i;
+    if (n > GT_NUM_SCANCODES) n = GT_NUM_SCANCODES;
+    for (i = 0; i < n; i++)
+        out[i] = (unsigned char)(real[i] | synth[i]);
+}
+
 #ifdef GT_REMAP_TEST
 
 #include <stdio.h>
@@ -300,6 +328,28 @@ int main(void) {
         if (n != 0) return fail("hat re-pass must be edge-free");
     }
 
+    /* v3: synthetic keystate array + merge (state-polling half) */
+    {
+        unsigned char synth[GT_NUM_SCANCODES];
+        memset(synth, 0, sizeof synth);
+        gt_synth_set(synth, 26, 1);              /* 'w' scancode down */
+        if (synth[26] != 1) return fail("synth set key down");
+        gt_synth_set(synth, 26, 0);              /* 'w' up */
+        if (synth[26] != 0) return fail("synth clear key up");
+        gt_synth_set(synth, -1, 1);              /* out of range: no crash */
+        gt_synth_set(synth, GT_NUM_SCANCODES, 1);
+
+        unsigned char real[GT_NUM_SCANCODES], out[GT_NUM_SCANCODES];
+        memset(real, 0, sizeof real);
+        memset(out, 0, sizeof out);
+        real[44] = 1;                            /* space held on a real keyboard */
+        synth[82] = 1;                           /* Up synthesized by the shim */
+        gt_merge_keystate(out, real, synth, GT_NUM_SCANCODES);
+        if (out[44] != 1) return fail("merge keeps real key");
+        if (out[82] != 1) return fail("merge adds synth key");
+        if (out[26] != 0) return fail("merge leaves untouched key clear");
+    }
+
     puts("remap ok");
     return 0;
 }
@@ -331,6 +381,16 @@ static gt_keymap gt_map;
 static SDL_Event gt_stash[8];
 static int gt_stash_n;
 static int gt_hat_prev;
+
+/* v3 state-polling half: the synthetic keyboard-state array (set as keys are
+ * synthesized) and the merged buffer handed to the app. gt_ks_active flips on
+ * once the app calls SDL_GetKeyboardState — after that every event poll
+ * refreshes the merged buffer, because SDL apps (LÖVE among them) grab the
+ * state pointer ONCE and then just index it every frame. */
+static unsigned char gt_synth_keys[GT_NUM_SCANCODES];
+static Uint8 gt_merged_keys[GT_NUM_SCANCODES];
+static int gt_ks_numkeys;
+static int gt_ks_active;
 
 /* One unconditional line at load: launch.sh redirects stderr into the pak
  * log, so this is the cheap on-device proof that the preload took effect. */
@@ -417,6 +477,7 @@ static void gt_make_key_event(SDL_Event *ev, Uint32 timestamp,
     ev->key.state = pressed ? SDL_PRESSED : SDL_RELEASED;
     ev->key.keysym.sym = (SDL_Keycode)k.sym;
     ev->key.keysym.scancode = (SDL_Scancode)k.scancode;
+    gt_synth_set(gt_synth_keys, k.scancode, pressed);  /* v3: mirror into the polled keystate */
     if (gt_debug())
         fprintf(stderr, "gt-input-remap: synth key sym=0x%x (%s)\n",
                 (unsigned)k.sym, pressed ? "down" : "up");
@@ -467,18 +528,48 @@ static void gt_rewrite(SDL_Event *ev) {
     }
 }
 
+/* v3: recompute the merged keystate = SDL's real state OR the synthetic one.
+ * Called from the interposed SDL_GetKeyboardState and — once the app has taken
+ * our pointer — from every event poll, so a cached pointer keeps updating. */
+static void gt_refresh_keystate(void) {
+    static const Uint8 *(*real_gks)(int *);
+    if (!real_gks)
+        real_gks = (const Uint8 *(*)(int *))dlsym(RTLD_NEXT, "SDL_GetKeyboardState");
+    if (!real_gks) return;
+    int n = 0;
+    const Uint8 *real = real_gks(&n);
+    if (!real) return;
+    if (n <= 0 || n > GT_NUM_SCANCODES) n = GT_NUM_SCANCODES;
+    gt_ks_numkeys = n;
+    gt_merge_keystate(gt_merged_keys, real, gt_synth_keys, n);
+}
+
+/* v3: hand the app OUR buffer (real | synthetic) instead of SDL's, so
+ * SDL_GetKeyboardState / love.keyboard.isDown polling sees synthesized keys.
+ * The buffer is static (valid for the process lifetime) and kept fresh by the
+ * poll interposers below. */
+const Uint8 *SDL_GetKeyboardState(int *numkeys) {
+    gt_refresh_keystate();
+    gt_ks_active = 1;
+    if (numkeys) *numkeys = gt_ks_numkeys;
+    return gt_merged_keys;
+}
+
 int SDL_PollEvent(SDL_Event *ev) {
     static int (*real)(SDL_Event *);
     if (!real) real = (int (*)(SDL_Event *))dlsym(RTLD_NEXT, "SDL_PollEvent");
     gt_ensure_joystick_open();
+    int r;
     if (ev && gt_stash_n > 0) {
         *ev = gt_stash[0];
         gt_stash_n--;
         memmove(&gt_stash[0], &gt_stash[1], (size_t)gt_stash_n * sizeof gt_stash[0]);
-        return 1;
+        r = 1;
+    } else {
+        r = real(ev);
+        if (r == 1) { gt_trace("poll", ev); gt_rewrite(ev); }
     }
-    int r = real(ev);
-    if (r == 1) { gt_trace("poll", ev); gt_rewrite(ev); }
+    if (gt_ks_active) gt_refresh_keystate();  /* keep a cached keystate pointer live */
     return r;
 }
 
@@ -486,14 +577,17 @@ int SDL_WaitEventTimeout(SDL_Event *ev, int timeout) {
     static int (*real)(SDL_Event *, int);
     if (!real) real = (int (*)(SDL_Event *, int))dlsym(RTLD_NEXT, "SDL_WaitEventTimeout");
     gt_ensure_joystick_open();
+    int r;
     if (ev && gt_stash_n > 0) {
         *ev = gt_stash[0];
         gt_stash_n--;
         memmove(&gt_stash[0], &gt_stash[1], (size_t)gt_stash_n * sizeof gt_stash[0]);
-        return 1;
+        r = 1;
+    } else {
+        r = real(ev, timeout);
+        if (r == 1) { gt_trace("wait", ev); gt_rewrite(ev); }
     }
-    int r = real(ev, timeout);
-    if (r == 1) { gt_trace("wait", ev); gt_rewrite(ev); }
+    if (gt_ks_active) gt_refresh_keystate();  /* keep a cached keystate pointer live */
     return r;
 }
 

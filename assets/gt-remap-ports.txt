@@ -1,7 +1,17 @@
 # gt-remap-ports.txt — launcher filenames (one per line, exact) of ports the
-# pak preloads gt-input-remap.so for (F25). These ports read raw SDL joystick
-# events, whose button indices sit +3 off the expected layout on NextUI-h700
-# (see assets/gt-input-remap.c for the measured table). Users can extend this
-# without rebuilding via a `use-remap-ports` file in the pak's userdata dir.
-# Lines starting with # never match a launcher filename and act as comments.
+# pak preloads gt-input-remap.so for (F25). These ports need the shim on
+# NextUI-h700: either they read raw SDL joystick events (whose button indices
+# sit +3 off the expected layout) or they read the keyboard, which gptokeyb's
+# uinput device never reaches on NextUI — so the shim synthesizes SDL key
+# events (and, from v3, keeps SDL_GetKeyboardState in sync for polling games)
+# from the port's gptk. See assets/gt-input-remap.c for the details. Users can
+# extend this without rebuilding via a `use-remap-ports` file in the pak's
+# userdata dir. Lines starting with # never match a filename and act as comments.
 Tunics!.sh
+# v0.2.2: keyboard-gptk ports, user-reported input-dead and device-verified
+# fixed by the shim (Camille, 2026-08-24). BYTEPATH also joins the list; its
+# in-game input needs the v3 state-polling half (love.keyboard.isDown).
+BYTEPATH.sh
+Lasagna Boy Classic.sh
+Road Invaders.sh
+The Starlit Escape.sh

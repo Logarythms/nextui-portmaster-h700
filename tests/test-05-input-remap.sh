@@ -55,6 +55,13 @@ sh -n "$work/launch.sh" || { echo "edited launch.sh does not parse"; exit 1; }
 # the pak-shipped default list must exist and carry Tunics! (the port this
 # hook was built for); comment lines are inert (grep -Fx never matches them)
 assert_contains "$ROOT/assets/gt-remap-ports.txt" 'Tunics!.sh'
+# v0.2.2: three more keyboard-gptk ports that were input-dead until the user
+# added them to use-remap-ports (device-verified by Camille) — promoted to the
+# pak default so they work out of the box. Exact launcher filenames.
+assert_contains "$ROOT/assets/gt-remap-ports.txt" 'BYTEPATH.sh'
+assert_contains "$ROOT/assets/gt-remap-ports.txt" 'Lasagna Boy Classic.sh'
+assert_contains "$ROOT/assets/gt-remap-ports.txt" 'Road Invaders.sh'
+assert_contains "$ROOT/assets/gt-remap-ports.txt" 'The Starlit Escape.sh'
 
 # --- idempotency ---
 GT_STAGE_EDIT_ONLY="$work" sh "$ROOT/build/build-pak.sh" portmaster

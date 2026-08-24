@@ -8,9 +8,10 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F29) below match the internal numbering used while these were
+Fix IDs (F1–F31) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
-issue report can refer to a specific one.
+issue report can refer to a specific one. A closing section records the ports
+that this platform genuinely can't run.
 
 ## Missing shared libraries ("the h700 lib gap")
 
@@ -390,9 +391,9 @@ events → Tunics! playable, hardware-verified 2026-08-23.
 Deliberate limits: only the simple `name = key` subset of the gptk
 format is honored (letters, digits, space/esc/tab/enter/backspace,
 modifiers, arrows) — hold-state layers, mouse emulation, and analog
-handling are ignored (the RG SP has no sticks); and only event-consuming
-games are covered. Games that poll `SDL_GetKeyboardState` instead of
-reading events remain the one honestly-unsupported input tier (see F8).
+handling are ignored (the RG SP has no sticks). This half covers
+event-consuming games; games that instead *poll* `SDL_GetKeyboardState`
+are handled by the state-polling half added in F31.
 
 ## Broken binaries inside a port: the port-fixes overlay (F27)
 
@@ -507,6 +508,31 @@ mixed runner-native and FMOD audio would lose the runner-native half. The
 real fix belongs upstream — a shareable audio path (a userspace mixer, or
 FMOD_SDL learning to share the device) — and is on the follow-up list.
 
+## Polling ports: keeping `SDL_GetKeyboardState` in sync (F31)
+
+F26 synthesizes SDL key *events* from the gamepad, which serves every port
+that reads input by consuming events. But some games never read the event
+stream for gameplay — they *poll* the current key state each frame through
+`SDL_GetKeyboardState` (LÖVE exposes exactly this as `love.keyboard.isDown`).
+Those synthesized events never touch SDL's internal keyboard-state array, so
+polling saw nothing. BYTEPATH, a user-reported case, made it vivid: its menus
+(event-driven) navigated fine while gameplay (its run loop polls) was dead.
+
+The shim now keeps a synthetic keyboard-state array beside the event
+synthesis — every key it presses or releases for the game is mirrored into
+that array — and interposes `SDL_GetKeyboardState` to return `real | synthetic`
+(SDL's own state OR'd with the synthetic one, so a real keyboard, if any, still
+works). SDL apps grab the state pointer once and index it every frame, so the
+merged buffer is refreshed on every event poll as well as on each
+`SDL_GetKeyboardState` call, keeping a cached pointer live. The array-update
+and merge logic is pure and host-tested (`-DGT_REMAP_TEST`); the interposition
+itself is device-gated. Verified on hardware 2026-08-24: BYTEPATH plays in-game
+and in-menu (`keyboard synthesis on, 15 mapping(s)` … `opened 1/1 joystick(s)`).
+
+The joystick-state counterpart (`SDL_JoystickGetButton`) is deliberately not
+interposed — no installed port has needed it — so raw-joystick *polling* ports
+remain the one open input sub-tier (see F8).
+
 ## Input architecture: an honest compatibility statement (F8)
 
 NextUI's SDL2 build on h700 does not deliver PortMaster's usual
@@ -530,12 +556,45 @@ in general, so ports fall into three honest tiers:
    port's own `.gptk` mapping. Both are enabled per port via the
    shipped default list or the user's `use-remap-ports` file (see the
    README).
-3. **Currently unsupported.** Ports that poll raw controller button
-   state or keyboard state directly (as opposed to reading discrete
-   press events) still have no working input path on this platform.
-   Fixing this last tier needs state-call interposition
-   (`SDL_JoystickGetButton` / `SDL_GetKeyboardState`) that is not yet
-   part of this repository.
+3. **Mostly covered; one open sub-tier.** Ports that *poll* the current
+   input state, rather than reading discrete press events, used to have
+   no path here. Keyboard-state polling — `SDL_GetKeyboardState`, i.e.
+   `love.keyboard.isDown` — is now served by the shim's state-polling
+   half (F31). The remaining gap is raw *joystick*-state polling
+   (`SDL_JoystickGetButton`); no installed port has needed it, so its
+   interposition isn't in the repository yet.
 
 The gamepad-to-keyboard translation tool itself does not interfere with
 tier-1 input and is left enabled by default.
+
+## Ports this platform can't run
+
+A few ports depend on capabilities the h700's NextUI/BaseOS image simply
+doesn't provide, and no repackaging fix reaches them. Recorded here so a user
+report can be answered quickly. All four below were checked against a ROCKNIX
+device (officially PortMaster-supported) to separate "the port is broken" from
+"this platform can't host it" — in every case it's the latter.
+
+- **Weston + Mesa/Panfrost ports** — e.g. *Alex the Allegator 1*, *Mage
+  Recall*. These launch a bundled Weston compositor and render through the
+  Crusty GL shim, which targets the open-source Mesa/Panfrost driver. Two walls
+  on NextUI-h700: Weston's libinput backend needs a `udev`/`seatd` stack the
+  image has no part of (it finds no input devices and aborts), and the render
+  path wants Mesa/Panfrost while the image ships only the proprietary mali blob
+  on an old Allwinner 4.9 kernel. On the ROCKNIX device both ports run once the
+  GPU driver is switched to Panfrost. Bringing Panfrost to NextUI would mean a
+  full Mesa stack plus a kernel DRM driver the vendor kernel lacks — out of
+  scope for a pak.
+- **box64 ports** — e.g. *Momodora: Reverie under the Moonlight* (an RHH
+  port). These emulate an x86-64 Linux binary through box64 *and* use the
+  Weston/Panfrost stack above, so they inherit both walls; the box64 runtime is
+  additionally an RHH-specific artifact the pinned harbourmaster can't fetch
+  (like `gmloadernext`, it would need manual placement — and even official
+  PortMaster on ROCKNIX has no button to install it).
+- **32-bit armhf ports** — e.g. *Curseball* (an old-`gmloader` port). These
+  need a 32-bit armhf userspace, including a 32-bit mali GLES driver, that
+  NextUI-h700 doesn't ship (the armhf loader is present, the libraries are
+  not); its `gmloader` dies resolving a 64-bit `libstdc++.so.6`. It renders on
+  the ROCKNIX device, which carries the 32-bit stack.
+- **libretro-class ports** — need the CFW's RetroArch, which NextUI doesn't
+  expose to paks.
