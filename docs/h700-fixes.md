@@ -409,7 +409,8 @@ ports:
    release tag is a rolling `latest`, so the pin fails closed and must
    be refreshed deliberately if upstream rolls it). The binary is
    byte-identical to the one the official Deltarune port bundles, which
-   already proved itself against this device's glibc 2.30.
+   already proved itself against this device's glibc (2.35, device-verified
+   2026-08-26; an earlier version of this note said 2.30, now stale).
 2. **The `gmloadernext.squashfs` runtime**, which is *not* an official
    PortMaster runtime — it lives in RHH's own
    [`runtimes-latest`](https://github.com/JeodC/RHH-Ports/releases/tag/runtimes-latest)
@@ -682,3 +683,68 @@ device (officially PortMaster-supported) to separate "the port is broken" from
   the ROCKNIX device, which carries the 32-bit stack.
 - **libretro-class ports** — need the CFW's RetroArch, which NextUI doesn't
   expose to paks.
+
+## Newer-glibc ports: a validated per-port glibc sandbox (on the shelf, not yet needed)
+
+Some newest-generation ports link against glibc symbols
+(`GLIBC_2.36`/`2.37`/`2.38`) that this device's glibc doesn't export, and fail
+at load with `version 'GLIBC_2.3x' not found`. None of the currently-known
+unsupported ports (above) fail this way — their blockers are display scanout or
+CPU architecture, not libc — so nothing needs this today. It is recorded here as
+a validated technique to reach for the first time a specific port hits that wall.
+
+**Device baseline (verified 2026-08-26 over ssh).** kernel 4.9.170, **glibc
+2.35**, **SDL2 2.28.5** (`/.system/h700/lib/libSDL2-2.0.so.0.2800.5`). This came
+out of evaluating the *StockOS MOD* PortMaster fork (kai4man), whose entire
+"100 % ports" story turns out to be a userland modernization — a system patch
+that swaps glibc up to 2.38 and SDL2 up to 2.28.5 (it ships **no** kernel, DRM
+driver, Weston, or box64). NextUI-h700 has already banked most of that on its
+own: we are at **parity on SDL2** (both 2.28.5) and within three minor versions
+on glibc. So the only userland gap left to StockOS MOD is the glibc 2.35 → 2.38
+tail; the scanout / architecture gaps in the section above are unrelated to it
+and this technique does not address them.
+
+**The technique — a per-port alternate loader, never a system swap.** StockOS MOD
+repoints the *system* loader (`/lib/ld-linux-aarch64.so.1`) at a bundled
+`/opt/glibc-2.38`. We must never do that on NextUI: its launcher, `minarch`, and
+the mali blob are built against the system glibc, and repointing it risks
+bricking the UI. Instead, sandbox only the port process — ship a glibc tree in
+the pak and launch the port binary through *that* tree's loader:
+
+```sh
+GLIBC="$controlfolder/glibc-2.38"
+"$GLIBC/lib/ld-linux-aarch64.so.1" \
+  --library-path "$GLIBC/lib/aarch64-linux-gnu:$GLIBC/lib:$PORT_LIBS" \
+  ./the_port_binary
+```
+
+Only that process and its children see the newer glibc; the rest of the system
+is untouched. This is the same shape as upstream PortMaster's optional `glibc`
+runtime.
+
+**Why it's safe.** glibc symbol versioning is strictly additive: a 2.38 libc is a
+superset of 2.35, so every library already on the device (SDL2, the mali blob,
+gl4es, …) keeps resolving under it. Nothing that runs today can break inside the
+sandbox — the only new capability is serving a binary that needs 2.36–2.38.
+
+**Feasibility — proven on-device (2026-08-26 spike; non-destructive, torn down).**
+Using StockOS MOD's own extracted glibc-2.38 `lib/` subtree staged in `/tmp`
+(tmpfs — the SD card is vfat and cannot hold glibc's symlinks/hardlinks; `/` and
+`/data` are ext4 if a persistent copy is ever wanted):
+
+- **T1** — the 2.38 `ld.so` executes on the 4.9.170 kernel
+  (`ld.so (GNU libc) stable release version 2.38`).
+- **T2** — a stock binary (`/bin/ls`) runs under
+  `ld-linux-aarch64.so.1 --library-path …`.
+- **T3** — Deltarune's real GameMaker + SDL2 runner (`gmloadernext.aarch64`)
+  resolves cleanly under the sandbox: `libc`/`libm`/`libpthread`/`librt`/`libdl`
+  from the 2.38 tree, `libSDL2-2.0.so.0` from the pak's 2.28.5, everything else
+  found, zero errors.
+
+**If/when it ships.** Make it a per-port opt-in (a flag or a small allow-list in
+`launch.sh`), not a blanket wrapper — running every port through the sandbox is
+needless overhead and a larger surface for the rare port that dislikes a swapped
+loader. Bundle a glibc tree in the pak (StockOS MOD's is a ready, device-matched
+2.38 build; a clean-room build from Debian/crosstool-NG is the licensing-safe
+long-term source) and gate each candidate port with an on-device run. Priority is
+**low** until a wanted port actually needs it.

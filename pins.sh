@@ -97,7 +97,8 @@ PM_OGG_DEB_SHA256=910d1f3893a9340ea83bf19deebbc4e0d2362f22c274c2c2d3f00e4ba386c8
 # design; shipped here so those ports patch out of the box). The binary is
 # byte-identical in size to the one the official deltarune port bundles in
 # its own tools/, which already ran successfully on this device's glibc
-# 2.30. NOTE: the upstream release tag is a ROLLING "latest" — if upstream
+# (2.35, device-verified 2026-08-26; an earlier draft of this note said 2.30,
+# now stale). NOTE: the upstream release tag is a ROLLING "latest" — if upstream
 # rolls it, this pin fails closed at build time and must be refreshed
 # deliberately (re-verify like any pin: double-download + on-device run).
 # Zip sha is the asset's own sha256, double-download cross-checked
