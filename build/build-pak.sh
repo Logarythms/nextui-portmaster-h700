@@ -642,6 +642,67 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-fast-splash: F33 — run_port's "Starting <port>..." splash is a
+  # FOREGROUND minui-presenter with a 3s timeout (show_message's numeric-timeout
+  # branch does NOT background), so every port launch blocks a full 3s on a
+  # screen that does no work before exec-ing the game. Cut it to 1s. The call is
+  # KEPT and stays FOREGROUND on purpose: show_message first kills the "Starting,
+  # please wait..." forever-presenter (gt_kill_presenters), so a presenter must
+  # not still be alive when the port grabs the mali fbdev surface — that is the
+  # F14/F15 present-path desync. Backgrounding or deleting this call would
+  # reintroduce it; only the timeout value changes. Exact-line awk match; the
+  # anchor is upstream content (pin-safe), and ${ROM_NAME%.*} is a literal string
+  # to awk (no shell expansion inside the awk program).
+  if ! grep -q 'gt-h700-fast-splash' "$f"; then
+    awk '$0 == "    show_message \"Starting ${ROM_NAME%.*}...\" 3" {
+      print "    show_message \"Starting ${ROM_NAME%.*}...\" 1  # gt-h700-fast-splash: was a 3s foreground blocking splash doing no work; 1s still kills the please-wait presenter and paints before the port takes fb0 (do NOT background/drop — F14/F15 mali desync)"
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-skip-redundant-patch: F33 — patch_pylibs unpacks pylibs.zip once (the
+  # zip is deleted on success) but then re-ran its two seds and TWO python3
+  # disable_python_function.py spawns on EVERY launch (~0.5s of python cold-start
+  # doing nothing — the log says "may already be disabled" twice). Guard the
+  # patch block so it runs only when pylibs was (re)extracted this launch
+  # (gt_fresh, captured BEFORE unzip_pylibs consumes the zip) or the .gt-patched
+  # marker is absent. Self-healing is preserved by construction: the marker is
+  # written only AFTER the patches, so a crash between the unzip and the marker
+  # re-patches next launch; and a pak upgrade's unzip-over ships a fresh
+  # pylibs.zip, so gt_fresh forces a re-patch against the new (unpatched) files.
+  # launch.sh runs without set -e, but the guard uses an explicit `if` (not
+  # `&& gt_fresh=1`) so it stays correct even if that ever changes. awk state
+  # machine: emit the gt_fresh capture right after the function opens, the
+  # `if...then` right after unzip_pylibs, and the marker `touch` + `fi` right
+  # before the function's closing brace — so it wraps the seds AND both python
+  # calls (including the harbour.py one gt-h700-no-self-update injects, which
+  # runs earlier in this function so it is already present). The first bare "}"
+  # after "patch_pylibs() {" is the function close (its body has no nested "}").
+  if ! grep -q 'gt-h700-skip-redundant-patch' "$f"; then
+    awk '
+    $0 == "patch_pylibs() {" {
+      print
+      print "    gt_fresh=0  # gt-h700-skip-redundant-patch: re-patch only on a (re)extracted pylibs or a missing marker; steady-state launches skip the ~0.5s of python cold-starts"
+      print "    if [ -f \"$EMU_DIR/pylibs.zip\" ]; then gt_fresh=1; fi"
+      gt_in_pp = 1
+      next
+    }
+    gt_in_pp == 1 && $0 == "    unzip_pylibs \"$EMU_DIR/pylibs.zip\"" {
+      print
+      print "    if [ \"$gt_fresh\" = 1 ] || [ ! -f \"$EMU_DIR/pylibs/.gt-patched\" ]; then  # gt-h700-skip-redundant-patch"
+      next
+    }
+    gt_in_pp == 1 && $0 == "}" {
+      print "    touch \"$EMU_DIR/pylibs/.gt-patched\"  # gt-h700-skip-redundant-patch: written AFTER patching so a crash mid-patch re-patches next launch"
+      print "    fi"
+      print
+      gt_in_pp = 0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   rm -f "$f.bak"
 }
 

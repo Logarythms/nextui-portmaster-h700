@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F32) below match the internal numbering used while these were
+Fix IDs (F1–F33) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. A closing section records the ports
 that this platform genuinely can't run.
@@ -203,6 +203,48 @@ genuine port update still bumps the install copy's timestamp (carried
 through by the timestamp-preserving copy), so real updates still rebuild
 correctly. This is deliberately unconditional (not h700-only): a no-op
 timestamp bump is wrong on every platform.
+
+## Ports are slow to start for reasons the launch script controls (F33)
+
+Two "starting…" screens show before a port runs — first *"Starting,
+please wait…"*, then *"Starting `<port>`…"* — and both are drawn by this
+pak's own `launch.sh`, not by NextUI. Some of the wait between them is
+inherent (a big LÖVE/GameMaker port loads hundreds of MB of assets on
+slow storage, and there's nothing a launch script can do about that),
+but an on-device trace found two chunks that are pure launch-script
+overhead:
+
+- **A 3-second splash that does no work.** The *"Starting `<port>`…"*
+  screen is a `minui-presenter` call with a fixed 3-second timeout, run
+  in the *foreground* — so every single port launch simply sleeps on it
+  for three seconds before the game is exec'd. Fix (`gt-h700-fast-splash`):
+  drop the timeout to 1 second. The call is deliberately kept and kept
+  foreground, because it does one necessary thing besides showing a
+  message: it tears down the earlier *"please wait"* presenter, so that
+  no presenter is still alive when the port takes over the framebuffer
+  (a live presenter overlapping the port's fbdev grab is the F14/F15
+  present-path desync). Backgrounding or removing the call would bring
+  that back; only the duration changes. The game's own loading screen
+  simply appears about two seconds sooner.
+
+- **Re-patching the Python runtime on every launch.** `patch_pylibs`
+  unpacks the bundled `pylibs.zip` once (the archive is deleted on
+  success) and then applies a few edits to PortMaster's `platform.py` /
+  `harbour.py` — two of them by spawning `python3` to neutralize an
+  installer function. Those edits are idempotent, but they were re-run on
+  *every* launch, and the two `python3` cold-starts cost roughly half a
+  second doing nothing (the log even says *"may already be disabled"*
+  twice). Fix (`gt-h700-skip-redundant-patch`): guard the patch block so
+  it runs only when `pylibs.zip` was just (re)extracted this launch, or
+  when a `.gt-patched` marker is missing. The design stays self-healing:
+  the marker is written only *after* the patches, so an interrupted patch
+  re-runs next launch; and a pak upgrade (installed by unzipping over the
+  old one) ships a fresh `pylibs.zip`, which forces the patches to re-run
+  against the new, unpatched files.
+
+Neither change touches the genuinely necessary work, so a first launch
+(or the first launch after an upgrade) behaves exactly as before; it's
+the steady-state repeat launches that get faster.
 
 ## GUI freezes into "repaints only on keypress" (F14/F15/F16)
 
