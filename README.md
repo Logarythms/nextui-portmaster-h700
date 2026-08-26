@@ -36,6 +36,10 @@ Unzip the new `PORTS.pak.zip` over the SD card the same way you installed it, re
 
 - **PortMaster's self-update is disabled by this build.** Updating would replace the h700-patched runtime with the official one, which won't run on the RG SP — so the update prompt never appears, and even a manually triggered update is a no-op. New pak versions come as releases of this repository instead.
 - **Buttons use the Xbox layout** (A / B / X / Y in their Xbox positions).
+- **Tap Menu once during a game to show a battery/time/volume/brightness
+  overlay; tap it again to hide it.** Holding Menu to adjust brightness
+  still works as before. A couple of ports are exceptions — see
+  [docs/h700-fixes.md](docs/h700-fixes.md) for which and why.
 - Not every port runs — see below.
 
 ## Confirmed working games
@@ -153,16 +157,28 @@ those stay broken for now.
 <details>
 <summary>Technical details</summary>
 
-The translator is <code>lib/gt-input-remap.so</code>, an <code>LD_PRELOAD</code>
-shim the launcher injects only for listed ports. It always corrects this
-device's shifted SDL joystick button indices (hardware-measured table), and —
-when the launcher finds a <code>.gptk</code> in the port's game directory —
-replaces mapped joystick events with synthesized <code>SDL_KEYDOWN/KEYUP</code>
-at the SDL event layer, honoring the simple <code>name = key</code> subset of
-the gptk format. The pak-shipped default list lives at
-<code>files/gt-remap-ports.txt</code>; the GUI has a separate opt-in flag file
-<code>use-remap</code> (normally not needed — the GUI has its own mapping fix).
-Full story: <a href="docs/h700-fixes.md">docs/h700-fixes.md</a>.
+<code>lib/gt-input-remap.so</code> is an <code>LD_PRELOAD</code> shim the launcher
+now injects into every h700 port. It has two independent halves, each with
+its own default:
+
+- **The input translator (opt-in)**, described above: corrects this
+  device's shifted SDL joystick button indices (hardware-measured table)
+  and, when the launcher finds a <code>.gptk</code> in the port's game
+  directory, replaces mapped joystick events with synthesized
+  <code>SDL_KEYDOWN/KEYUP</code> at the SDL event layer, honoring the
+  simple <code>name = key</code> subset of the gptk format. Runs only for
+  ports on the pak-shipped <code>files/gt-remap-ports.txt</code> list or
+  the user's own list; the GUI has a separate opt-in flag file
+  <code>use-remap</code> (normally not needed — the GUI has its own mapping
+  fix).
+- **An in-game status overlay (opt-out)**: a single Menu tap shows or hides
+  a small battery/time/volume/brightness panel drawn into the port's own
+  graphics context. On by default for every port, except ones listed in
+  <code>files/gt-hud-blocklist.txt</code> or the user's own
+  <code>use-hud-blocklist</code>.
+
+Full story, including why this couldn't be a real display-compositor
+overlay: <a href="docs/h700-fixes.md">docs/h700-fixes.md</a>.
 </details>
 
 ## Credits & license

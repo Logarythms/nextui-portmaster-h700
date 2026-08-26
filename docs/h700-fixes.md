@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F33) below match the internal numbering used while these were
+Fix IDs (F1–F36) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. A closing section records the ports
 that this platform genuinely can't run.
@@ -633,6 +633,203 @@ in general, so ports fall into three honest tiers:
 
 The gamepad-to-keyboard translation tool itself does not interfere with
 tier-1 input and is left enabled by default.
+
+## In-game status overlay (F34)
+
+Regular NextUI emulators show a Menu-button status screen (battery, clock,
+etc.) without quitting the game; ports have no equivalent — each port is a
+standalone binary that owns the display, and nothing composites above it.
+F34 adds a toggleable on-screen overlay for ports, showing battery, time,
+volume, and screen brightness, drawn MangoHUD/Steam-overlay style: the shim
+renders directly into the port's own GL context rather than through any
+system compositor or hardware layer, because neither exists here (see the
+spike note below).
+
+- **Where it lives.** The draw path is a new half of the existing
+  `gt-input-remap.so` `LD_PRELOAD` shim — the same one that already does
+  index remap (F25), gptk key-event synthesis (F26), and keyboard
+  state-polling (F31) — interposing `SDL_GL_SwapWindow`/`eglSwapBuffers`
+  and drawing one alpha-blended textured quad into the port's own context
+  immediately before the real swap, saving and restoring every GL state
+  object it touches so a toggle-off leaves rendering exactly as it was.
+  This first stage covers the GL/GLES present path only (the engines this
+  pak ships: GameMaker/gmloadernext, LÖVE, solarus); the SDL
+  software-renderer path (`SDL_RenderPresent`) is a documented later
+  stage, so a pure-software port shows no overlay for now rather than a
+  partial or broken one. h700 only, like the rest of the shim.
+- **Trigger.** A single Menu tap — press then release with no other button
+  held during that press — toggles the overlay on or off; default is off,
+  and the Menu event is swallowed from the game either way. The tap
+  requirement is deliberate: keymon's existing Menu-held-plus-Volume
+  brightness shortcut has to keep working exactly as before, so the overlay
+  only flips on a clean, isolated tap and is never triggered by the leading
+  edge of a Menu-hold that turns into a brightness adjustment.
+- **What it shows.** A compact translucent panel in the top-right corner —
+  battery percent plus charging state, time, volume, and brightness —
+  refreshed about once a second.
+- **Metric sources.** Battery from
+  `/sys/class/power_supply/axp2202-battery/{capacity,status}`; time from
+  libc. Volume and brightness come from `/dev/shm/SharedSettings`, NextUI's
+  own shared struct (the same live values keymon writes and the numbers
+  the user actually set in the NextUI UI) — if that read fails or comes
+  back short, those two lines show `--` rather than a stale or guessed
+  number. (A future ALSA-control-plus-disp-`attr/sys`-backlight fallback is
+  sketched in the design spec for if the SharedSettings layout ever proves
+  unstable; it is not part of 0.3.0.)
+- **Gating: opt-out, not opt-in.** The shim now preloads on every h700
+  port, but only the overlay half defaults to on: `GT_HUD=1` unless the
+  port is listed in the pak-shipped `files/gt-hud-blocklist.txt` or the
+  user's own `use-hud-blocklist`. The input remap and gptk key synthesis
+  stay exactly as opt-in as before (`GT_INPUT_REMAP=1`, gated by the
+  `gt-remap-ports.txt` allowlist) — universal preload does not change input
+  behavior on a port that isn't on that list. `GT_HUD_DEBUG=1` traces the
+  sample/draw/swap path the same way `GT_INPUT_REMAP_DEBUG` does for remap.
+- **Crash safety.** The draw path is wrapped so any GL failure (a bad
+  shader compile, a missing GL entry point, an unexpected error) disables
+  the overlay for the rest of that session instead of crashing the host —
+  an opt-out feature that can't rely on a blocklist to protect whoever hits
+  a problem first has to fail this way.
+
+**Known limitations (Stage 1).** Two engine paths don't get the full
+experience yet — both are deliberate scope for this stage, not bugs:
+
+  - **Software-rendered ports show no overlay.** The shim only hooks the
+    GL/EGL swap functions (`SDL_GL_SwapWindow`/`eglSwapBuffers`); a pure
+    SDL-software-renderer port (`SDL_RenderPresent`, e.g. *Apotris*) never
+    calls either, so it shows nothing rather than a partial or broken
+    overlay. A software-path draw is a later stage. *(Resolved in F35 —
+    see below.)*
+  - **FNA/XNA-style ports render the overlay but can't toggle it.** The
+    toggle is driven from the interposed `SDL_PollEvent`/
+    `SDL_WaitEventTimeout`. FNA-based ports (e.g. *Celeste*) pump input via
+    `SDL_PumpEvents`/`SDL_PeepEvents` instead, so the Menu tap never reaches
+    the toggle logic. The overlay itself renders fine (its GL swap path is
+    hooked the same as any other GL port) — it's just permanently stuck at
+    whatever state it started in. Benign either way: the game plays
+    normally, no crash. *(Resolved in F35 — see below.)*
+
+**Device-gate results (2026-08-26).** HUD confirmed on-device across every
+GL/EGL-presenting engine this pak ships: GameMaker (*UFO 50*, *Deltarune*),
+LÖVE (*Balatro*, *BYTEPATH*), solarus/GL4ES (*Tunics!*), and *2048 Plus*. A
+single Menu tap toggles cleanly, toggle-off leaves rendering pristine, and
+the F25/F26/F31 input-remap and gptk-keyboard regression is intact
+(*Tunics!*/*BYTEPATH* still play correctly). The gate also corrected the
+`/dev/shm/SharedSettings` offsets used for the volume/brightness lines
+above: volume is int32 index 4 (byte offset 16) and brightness is int32
+index 1 (byte offset 4), both on NextUI's 0–20 / 0–10 scales — the pre-gate
+guess was wrong, and the shipped shim now reads 16/4.
+
+### 0.3.0 (targeted)
+
+**Fixes**
+- F33: faster port startup (splash + redundant-patch trims)
+- F34: in-game status overlay (battery/brightness/volume/time), GL/EGL engines
+- F35: overlay on software-renderer ports + universal Menu toggle (all engines)
+- F36: Tunics! (solarus) no-JIT fix — stops the LuaJIT crash on map transitions
+
+**Upgrading from v0.2.3:** unzip-over (self-healing); no manual steps.
+
+A hardware overlay layer — compositing above the port's framebuffer via the
+sunxi `/dev/disp` DE driver, immune to any of the GL-state risk above — was
+spiked and ruled out first: `DISP_LAYER_SET_CONFIG` returns `EPERM` for
+every channel on this device, root or not, because the DE manager runs in
+legacy fbdev mode and the driver refuses to mix that with direct layer
+programming. Full spike detail and the swap-interpose design are in
+`docs/superpowers/specs/2026-08-26-ingame-overlay-hud-design.md`.
+
+## In-game status overlay: software draw + universal toggle (F35)
+
+F34 shipped the overlay for GL/EGL-presenting ports only, with two Stage-1
+gaps: no draw path for software-rendered ports, and no working toggle for
+FNA/mono-hosted ports. F35 closes both by extending the same
+`gt-input-remap.so` shim rather than replacing any of its F34 machinery.
+
+- **Software draw.** A new interpose on `SDL_RenderPresent` composes the
+  same panel content the GL path draws into one CPU-side RGBA buffer,
+  uploads it into a single `SDL_PIXELFORMAT_ABGR8888` streaming texture
+  created on the port's own `SDL_Renderer`, and `SDL_RenderCopy`s it into
+  the top-right corner immediately before the real present. This is
+  backend-agnostic — it works whether that renderer happens to be
+  `software` or a GLES-backed `SDL_Renderer` — and covers *Apotris* and
+  any future 2D-renderer port. It has its own crash latch, `gt_sw_dead`,
+  independent of the GL path's latch, so a failure in one draw path
+  disables only that path for the rest of the session. *Celeste* needs
+  nothing from this half: its `libFNA3D` back end still ultimately calls
+  `SDL_GL_SwapWindow`, so it already draws through F34's GL hook.
+- **Universal evdev toggle.** Toggling no longer depends on which SDL
+  entry point a port's input loop happens to call. A detached thread
+  started by the shim reads `/dev/input/event*` directly, discovering the
+  right node by capability — the one whose `EV_KEY` bitmap reports both
+  `BTN_TL2` (312) and `KEY_GOTO` (354), NextUI's Menu button — rather than
+  a hardcoded event-node number, and watches it below mono, gptokeyb, and
+  SDL alike. It is the sole toggle authority for every engine this pak
+  ships, GL/EGL and software and FNA together. It opens the node
+  non-grabbing (no `EVIOCGRAB`), so keymon's existing Menu-hold brightness
+  combo and the game itself both keep seeing the same events; Vol- (114)
+  and Vol+ (115) are read from the same node purely to disqualify a
+  Menu-tap that's actually the leading edge of that brightness combo.
+- **Decision A: leave the F34 SDL interposers swallow-only.** The
+  `SDL_PollEvent`/`SDL_WaitEventTimeout` hooks added in F34 keep eating the
+  Menu press/release pair for GL-presenting ports so it never reaches the
+  game, but they no longer drive the toggle themselves — the evdev thread
+  does that for every port now. Non-regressive: mono- and gptokeyb-driven
+  ports never called those SDL entry points in the first place, so nothing
+  that used to work stops working, and GL ports keep the exact swallow
+  behavior they had under F34.
+- **Why not `SDL_PumpEvents`.** F34 assumed an eventual
+  `SDL_PumpEvents`/`SDL_PeepEvents` interpose would cover FNA-style input
+  pumping. The 2026-08-26 device spike killed that idea outright: *Celeste*
+  pumps input from managed C# via mono's `[DllImport]` P/Invoke
+  marshalling, which resolves the SDL entry points through an explicit
+  `dlopen` handle rather than the dynamic symbol table, so `LD_PRELOAD`
+  interposition never sees those calls at all — no SDL-level hook,
+  present or future, could ever have worked for this port. The evdev
+  layer is the only point in the input stack that is genuinely universal.
+- **Clears both Stage-1 limitations.** Software-rendered ports now both
+  show and toggle the overlay via the new draw path; FNA/mono-hosted ports
+  now toggle correctly via the evdev thread even though their input pump
+  is invisible to every SDL-level hook. See "Known limitations (Stage 1)"
+  under F34 above.
+- **Thread starts lazily, in the rendering process only.** The device
+  gate found that starting the evdev thread from the shim constructor
+  spawned it in *every* `LD_PRELOAD`'d process of a port launch — busybox
+  is dynamically linked here, so the shim loads into `bash`, `busybox
+  tee` (the log sink), gptokeyb, and the game alike — leaving several
+  extra threads each blocked in a `read()` on the input node. That added
+  ~8s to port *exit* (device A/B: same port exits &lt;2s with the thread
+  off, ~9–10s with it on). The thread is now started once per process
+  (`pthread_once`) from the present/swap interposers themselves, so only a
+  process that actually presents frames — the game — ever opens the node;
+  the shell and helper processes never do. Exit time is back to the F34
+  baseline, device-verified, with the toggle unchanged.
+- **Device-gate results (2026-08-26, RG SP).** Passed across every engine.
+  *Apotris* (software `SDL_RenderPresent` path): HUD shows and toggles,
+  values live and correct (brightness/volume update on change), colors
+  correct (ABGR8888), toggle-off leaves rendering pristine, no crash.
+  *Celeste* (FNA/mono, GL-drawn): HUD shows and toggles via the evdev
+  thread — the first working toggle under mono. The F34 GL-port set
+  (*Balatro*, *BYTEPATH*, *Deltarune*, *UFO 50*, *Tunics!*, *2048 Plus*)
+  still toggles and still swallows Menu from the game. keymon's Menu-hold
+  brightness combo works and does not spuriously toggle the overlay. The
+  exit-time regression above was found here and fixed before sign-off.
+
+## The F28 no-JIT pre-script never actually ran (F36)
+
+F28's fix for the LuaJIT aarch64 miscompile injected `-s=<pak>/files/solarus-nojit.lua`
+into the port's launch line. Solarus's `-s` option doesn't take a path — it
+runs its *value* as inline Lua source. A bare path is not valid Lua, so the
+engine logged `unexpected symbol near '/'`, the pre-script never executed,
+and the JIT stayed on: Tunics! kept crashing (`Illegal instruction`) on map
+transitions, intermittently, exactly as before F28 — device-diagnosed on
+Tunics!.
+
+Fix: inject `-s="dofile('<pak>/files/solarus-nojit.lua')"` instead — `dofile`
+is a real Lua call, so the engine loads and runs the pre-script and the JIT
+turns off as F28 intended. `run_port` also self-heals any launcher already
+carrying the broken F28 path form (checked ahead of the plain injection
+guard), so an upgrade fixes existing installs without a reinstall.
+Device-verified: Tunics! no longer crashes on the stairs transition, and A/B
+(reverting to the F28 form) reproduces the crash again.
 
 ## Ports this platform can't run
 

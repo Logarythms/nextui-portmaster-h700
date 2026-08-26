@@ -42,6 +42,15 @@ assert_contains "$work/launch.sh" 'export LD_PRELOAD="$PAK_DIR/lib/gt-input-rema
 # synthesis (gptokeyb's uinput keyboard never reaches SDL apps on NextUI)
 # shellcheck disable=SC2016
 assert_contains "$work/launch.sh" 'export GT_REMAP_GPTK="$gt_gptk"'
+
+# F34: LD_PRELOAD is now unconditional for h700; remap is gated by GT_INPUT_REMAP
+assert_contains "$work/launch.sh" 'export GT_INPUT_REMAP=1'
+# GT_INPUT_REMAP must sit inside the allowlist check, LD_PRELOAD outside it
+lp=$(grep -n 'export LD_PRELOAD=' "$work/launch.sh" | head -1 | cut -d: -f1)
+gate=$(grep -n 'gt-remap-ports.txt' "$work/launch.sh" | head -1 | cut -d: -f1)
+ir=$(grep -n 'export GT_INPUT_REMAP=1' "$work/launch.sh" | head -1 | cut -d: -f1)
+[ "$lp" -lt "$gate" ] || { echo "LD_PRELOAD must precede (be outside) the remap allowlist gate"; exit 1; }
+[ "$gate" -lt "$ir" ] || { echo "GT_INPUT_REMAP must be inside the allowlist gate"; exit 1; }
 # placement: inside run_port, immediately guarding the port exec — after the
 # controller-layout selection, before the bash invocation of the port script
 layout_nintendo_line=$(grep -n 'set_controller_layout nintendo' "$work/launch.sh" | head -1 | cut -d: -f1)

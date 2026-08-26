@@ -497,12 +497,20 @@ edit_portmaster_launch() { # $1=launch.sh path
   if ! grep -q 'gt-h700-solarus-nojit' "$f"; then
     awk '$0 == "    nintendo_file=$(find \"$USERDATA_PATH/PORTS-portmaster\" -maxdepth 1 -iname \"nintendo*\" -type f)" {
       print "    # gt-h700-solarus-nojit: LuaJIT 2.1.0-beta3 aarch64 JIT miscompiles under"
-      print "    # quest load (gdb-verified); run solarus quests with the JIT off via a"
-      print "    # -s pre-script. Guarded per file; solarus ports define runtime=\"solarus...\"."
-      print "    if [ \"$PLATFORM\" = \"h700\" ] && grep -q \"^runtime=\\\"solarus\" \"$ROM_PATH\" \\"
-      print "        && ! grep -q \"solarus-nojit\" \"$ROM_PATH\"; then"
-      print "        echo \"Injecting solarus no-JIT pre-script into $ROM_NAME\""
-      print "        sed -i \"s|^\\\"\\$runtime\\\" |\\\"\\$runtime\\\" -s=$PAK_DIR/files/solarus-nojit.lua |\" \"$ROM_PATH\""
+      print "    # quest load (gdb-verified); run solarus quests with the JIT off. F36:"
+      print "    # solarus -s= runs its VALUE as inline Lua, so the F28 path form"
+      print "    # (-s=<path>) errored (\"unexpected symbol near '\''/'\''\") and the JIT stayed"
+      print "    # on; pass -s=\"dofile('\''<path>'\'')\" and self-heal launchers still on the"
+      print "    # path form. Solarus ports define runtime=\"solarus...\"."
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && grep -q \"^runtime=\\\"solarus\" \"$ROM_PATH\"; then"
+      print "        gt_nojit=\"$PAK_DIR/files/solarus-nojit.lua\""
+      print "        if grep -qF -- \"-s=$gt_nojit \" \"$ROM_PATH\"; then"
+      print "            echo \"Healing solarus no-JIT pre-script (F36) in $ROM_NAME\""
+      print "            sed -i \"s|-s=$gt_nojit |-s=\\\"dofile('\''$gt_nojit'\'')\\\" |\" \"$ROM_PATH\""
+      print "        elif ! grep -q \"solarus-nojit\" \"$ROM_PATH\"; then"
+      print "            echo \"Injecting solarus no-JIT pre-script into $ROM_NAME\""
+      print "            sed -i \"s|^\\\"\\$runtime\\\" |\\\"\\$runtime\\\" -s=\\\"dofile('\''$gt_nojit'\'')\\\" |\" \"$ROM_PATH\""
+      print "        fi"
       print "    fi"
       print ""
       print $0
@@ -511,34 +519,45 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
-  # gt-h700-port-remap: F25 — preload the SDL joystick index-remap shim into
-  # ports that read raw joystick events (h700 button indices sit +3 off the
-  # layout ports expect; measured table in assets/gt-input-remap.c). The
+  # gt-h700-port-remap / gt-h700-hud: F25/F26/F34 — preload the SDL joystick
+  # index-remap + in-game HUD shim (LD_PRELOAD) into EVERY h700 port. The
   # README documented the shim as a port-level fix since v0.1.0, but only
   # run_portmaster_gui ever honored the flag — run_port had no preload path
   # at all (doc/code mismatch found while fixing Tunics!, whose Solarus
   # engine reads raw joystick events: it launched fine and ignored every
-  # button, hardware-diagnosed 2026-08-23). Enabled per port: launcher
-  # filenames listed in files/gt-remap-ports.txt (pak-shipped defaults) or
-  # in the user's $USERDATA_PATH/PORTS-portmaster/use-remap-ports (one name
-  # per line, no rebuild needed). NOT blanket-enabled: GameController-tier
-  # ports get correct input natively and must stay untouched.
+  # button, hardware-diagnosed 2026-08-23). What the shim actually DOES stays
+  # gated: the v1 index remap + gptk keyboard synthesis (h700 button indices
+  # sit +3 off the layout ports expect; measured table in
+  # assets/gt-input-remap.c) are opt-in via GT_INPUT_REMAP=1, set only for
+  # launcher filenames listed in files/gt-remap-ports.txt (pak-shipped
+  # defaults) or the user's $USERDATA_PATH/PORTS-portmaster/use-remap-ports
+  # (one name per line, no rebuild needed) — GameController-tier ports get
+  # correct input natively and must stay untouched. The in-game HUD (F34) is
+  # the opposite shape: GT_HUD=1 by default for every port, opt-OUT via
+  # files/gt-hud-blocklist.txt (pak-shipped) or the user's
+  # use-hud-blocklist, for ports where the overlay is known to misbehave.
   if ! grep -q 'gt-h700-port-remap' "$f"; then
     awk '$0 == "    \"$PAK_DIR/bin/bash\" \"$ROM_PATH\"" {
-      print "    # gt-h700-port-remap: preload the SDL joystick index-remap shim for ports"
-      print "    # listed in files/gt-remap-ports.txt (pak defaults) or the user'\''s"
-      print "    # use-remap-ports file — raw-joystick-event ports need it on h700."
-      print "    if [ \"$PLATFORM\" = \"h700\" ] && { grep -Fxq \"$ROM_NAME\" \"$PAK_DIR/files/gt-remap-ports.txt\" 2>/dev/null \\"
-      print "        || grep -Fxq \"$ROM_NAME\" \"$USERDATA_PATH/PORTS-portmaster/use-remap-ports\" 2>/dev/null; }; then"
-      print "        echo \"Preloading gt-input-remap.so for $ROM_NAME\""
+      print "    # gt-h700-port-remap / gt-h700-hud (F25/F26/F34)"
+      print "    if [ \"$PLATFORM\" = \"h700\" ]; then"
       print "        export LD_PRELOAD=\"$PAK_DIR/lib/gt-input-remap.so${LD_PRELOAD:+:$LD_PRELOAD}\""
-      print "        # F26: hand the shim the port'\''s own gptk mapping so it can synthesize"
-      print "        # keyboard events at the SDL layer (gptokeyb'\''s uinput keyboard never"
-      print "        # reaches SDL apps on NextUI). First .gptk in GAMEDIR wins."
-      print "        for gt_gptk in \"$GAMEDIR\"/*.gptk; do"
-      print "            [ -f \"$gt_gptk\" ] && export GT_REMAP_GPTK=\"$gt_gptk\""
-      print "            break"
-      print "        done"
+      print "        # input remap stays opt-in (allowlist): TrimUI index remap + gptk synthesis"
+      print "        if grep -Fxq \"$ROM_NAME\" \"$PAK_DIR/files/gt-remap-ports.txt\" 2>/dev/null \\"
+      print "            || grep -Fxq \"$ROM_NAME\" \"$USERDATA_PATH/PORTS-portmaster/use-remap-ports\" 2>/dev/null; then"
+      print "            echo \"Enabling input remap for $ROM_NAME\""
+      print "            export GT_INPUT_REMAP=1"
+      print "            for gt_gptk in \"$GAMEDIR\"/*.gptk; do"
+      print "                [ -f \"$gt_gptk\" ] && export GT_REMAP_GPTK=\"$gt_gptk\""
+      print "                break"
+      print "            done"
+      print "        fi"
+      print "        # HUD is opt-out (blocklist): on for every port unless listed"
+      print "        if grep -Fxq \"$ROM_NAME\" \"$PAK_DIR/files/gt-hud-blocklist.txt\" 2>/dev/null \\"
+      print "            || grep -Fxq \"$ROM_NAME\" \"$USERDATA_PATH/PORTS-portmaster/use-hud-blocklist\" 2>/dev/null; then"
+      print "            echo \"HUD disabled (blocklisted) for $ROM_NAME\""
+      print "        else"
+      print "            export GT_HUD=1"
+      print "        fi"
       print "    fi"
       print ""
       print $0
@@ -1015,6 +1034,11 @@ PMEOF
   # edit_portmaster_launch adds; users extend via use-remap-ports in
   # userdata without rebuilding).
   cp "$ASSETS/gt-remap-ports.txt" "$assembled/files/gt-remap-ports.txt"
+
+  # gt-h700-hud: F34 — pak-shipped default blocklist of ports where the
+  # in-game HUD overlay is known to misbehave (read by the same run_port
+  # hook); users extend via use-hud-blocklist in userdata without rebuilding.
+  cp "$ASSETS/gt-hud-blocklist.txt" "$assembled/files/gt-hud-blocklist.txt"
 
   # gt-h700-solarus-nojit: F28 — the -s pre-script run_port injects into
   # solarus port invocations (see edit_portmaster_launch).

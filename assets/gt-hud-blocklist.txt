@@ -1,0 +1,5 @@
+# gt-hud-blocklist.txt — ports where the in-game HUD (F34) misbehaves.
+# One launcher filename per line (exact, e.g. "SomePort.sh"). Comment lines
+# (leading #) are inert. The HUD is ON by default for every other port;
+# users can add their own entries in
+# $USERDATA_PATH/PORTS-portmaster/use-hud-blocklist (no rebuild needed).

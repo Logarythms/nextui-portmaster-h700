@@ -1,0 +1,54 @@
+{
+  "planPath": "docs/superpowers/plans/2026-08-26-ingame-overlay-hud.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: HUD sampling + formatting (pure C)",
+      "status": "completed",
+      "description": "**Goal:** Pure-C logic decoding the four metrics into a cache struct + formatting to display strings; host asserts in main().\n\n**Files:** Modify assets/gt-input-remap.c (shared-logic section before #ifdef GT_REMAP_TEST; asserts in main()). Test: tests/test-05-input-remap.sh (unchanged runner).\n\n**Acceptance Criteria:** gt_shared_settings_decode extracts volume(0-20)/brightness(0-10) at named offsets; gt_fmt_metrics produces BAT/TIME/VOL/BRI strings; battery + charging parse from sysfs strings; time HH:MM from struct tm; main() prints 'remap ok'.\n\n**Verify:** sh tests/test-05-input-remap.sh → exits 0\n\n```json:metadata\n{\"files\": [\"assets/gt-input-remap.c\", \"tests/test-05-input-remap.sh\"], \"verifyCommand\": \"sh tests/test-05-input-remap.sh\", \"acceptanceCriteria\": [\"gt_shared_settings_decode extracts volume/brightness at named offsets\", \"gt_fmt_metrics produces the four display strings\", \"battery percent + charging parse from sysfs strings\", \"time formats HH:MM from struct tm\", \"main() still prints 'remap ok'\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Bitmap font + HUD compose to RGBA",
+      "status": "completed",
+      "blockedBy": [1],
+      "description": "**Goal:** Rasterize the four lines + translucent panel into an RGBA buffer at top-right via an embedded bitmap font. Pure C, host-tested.\n\n**Files:** Modify assets/gt-input-remap.c (shared-logic; asserts in main()). Test: tests/test-05-input-remap.sh.\n\n**Acceptance Criteria:** embedded 6x8 font covers 0-9 A-Z : % + space -; gt_hud_compose writes RGBA panel + returns dims; gt_hud_rect returns top-right origin w/ margin; host asserts text pixels present, bg set, rect in-bounds.\n\n**Verify:** sh tests/test-05-input-remap.sh → exits 0\n\n```json:metadata\n{\"files\": [\"assets/gt-input-remap.c\", \"tests/test-05-input-remap.sh\"], \"verifyCommand\": \"sh tests/test-05-input-remap.sh\", \"acceptanceCriteria\": [\"embedded 6x8 font covers 0-9 A-Z : % + space -\", \"gt_hud_compose writes RGBA panel + returns dims\", \"gt_hud_rect returns top-right origin with margin\", \"host asserts: text pixels present, bg set, rect in-bounds\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Env-flag gating + Menu toggle + remap decouple",
+      "status": "completed",
+      "blockedBy": [2],
+      "description": "**Goal:** Introduce GT_INPUT_REMAP (gate v1 remap), GT_HUD, GT_HUD_DEBUG; Menu-tap toggle w/ event-swallow; gptk synthesis unchanged; preserve remap behavior for allowlisted ports.\n\n**Files:** Modify assets/gt-input-remap.c (constructor, poll interposers, gt_rewrite, gt_ensure_joystick_open; pure toggle helper + asserts in main()). Test: tests/test-05-input-remap.sh.\n\n**Acceptance Criteria:** v1 remap runs only when GT_INPUT_REMAP=1; gptk synthesis unchanged, independent of GT_HUD; Menu down toggles gt_hud_visible + both edges swallowed when GT_HUD=1; gt_ensure_joystick_open opens for HUD too; gt_menu_toggle asserted; main() prints 'remap ok'.\n\n**Verify:** sh tests/test-05-input-remap.sh → exits 0\n\n```json:metadata\n{\"files\": [\"assets/gt-input-remap.c\", \"tests/test-05-input-remap.sh\"], \"verifyCommand\": \"sh tests/test-05-input-remap.sh\", \"acceptanceCriteria\": [\"v1 remap runs only when GT_INPUT_REMAP=1\", \"gptk synthesis unchanged, independent of GT_HUD\", \"Menu down toggles gt_hud_visible and both edges swallowed when GT_HUD=1\", \"gt_ensure_joystick_open opens for HUD too\", \"gt_menu_toggle asserted in main()\", \"main() prints 'remap ok'\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: GL swap-interpose HUD draw backend + Makefile",
+      "status": "completed",
+      "blockedBy": [2, 3],
+      "description": "**Goal:** When gt_hud_visible, upload the CPU-composed HUD as one textured quad in the port's GL context, interposing SDL_GL_SwapWindow + eglSwapBuffers, with full GL-state save/restore, single-draw guard, crash-safe disable-on-error. Resolve GL/EGL dynamically.\n\n**Files:** Modify assets/gt-input-remap.c (interposer half). Modify Makefile (shim target: add libgles2-mesa-dev libegl1-mesa-dev).\n\n**Acceptance Criteria:** both swaps interposed via RTLD_NEXT, draw before real swap when visible; per-frame guard prevents double draw; full GL-state save/restore; GL error self-disables HUD (no crash); make shim builds cleanly, -ldl only; host test still passes.\n\n**Verify:** make shim && sh tests/test-05-input-remap.sh → build lists .so; test exits 0 (behavioral proof = Task 7).\n\n```json:metadata\n{\"files\": [\"assets/gt-input-remap.c\", \"Makefile\"], \"verifyCommand\": \"make shim && sh tests/test-05-input-remap.sh\", \"acceptanceCriteria\": [\"SDL_GL_SwapWindow + eglSwapBuffers interposed via RTLD_NEXT, draw before real swap when visible\", \"per-frame guard prevents double draw\", \"full GL-state save/restore around the draw\", \"GL error self-disables the HUD (no crash)\", \"make shim builds cleanly, -ldl only\", \"host test still passes\"], \"modelTier\": \"frontier\"}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: build-pak.sh universal preload + HUD blocklist",
+      "status": "completed",
+      "blockedBy": [3],
+      "description": "**Goal:** Preload the shim on every h700 port; GT_INPUT_REMAP=1 + GT_REMAP_GPTK only for allowlisted ports; GT_HUD=1 unless blocklisted. Ship assets/gt-hud-blocklist.txt. Update test-05; add test-13.\n\n**Files:** Modify build/build-pak.sh (gt-h700-port-remap injected block; copy gt-hud-blocklist.txt into pak files/). Create assets/gt-hud-blocklist.txt. Modify tests/test-05-input-remap.sh. Create tests/test-13-overlay-hud.sh.\n\n**Acceptance Criteria:** LD_PRELOAD unconditional for h700; GT_INPUT_REMAP + GT_REMAP_GPTK only inside allowlist check; GT_HUD=1 unless blocklisted (pak file or user override); assets/gt-hud-blocklist.txt exists + shipped to files/; marker-guarded, idempotent, sh -n clean; test-05 + test-13 pass.\n\n**Verify:** sh tests/test-05-input-remap.sh && sh tests/test-13-overlay-hud.sh → both exit 0\n\n```json:metadata\n{\"files\": [\"build/build-pak.sh\", \"assets/gt-hud-blocklist.txt\", \"tests/test-05-input-remap.sh\", \"tests/test-13-overlay-hud.sh\"], \"verifyCommand\": \"sh tests/test-05-input-remap.sh && sh tests/test-13-overlay-hud.sh\", \"acceptanceCriteria\": [\"LD_PRELOAD unconditional for h700\", \"GT_INPUT_REMAP + GT_REMAP_GPTK only inside allowlist check\", \"GT_HUD=1 unless blocklisted (pak file or user override)\", \"assets/gt-hud-blocklist.txt exists + shipped to files/\", \"marker-guarded, idempotent, sh -n clean; test-05 + test-13 pass\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Docs — F34 section + release notes stub",
+      "status": "completed",
+      "blockedBy": [4, 5],
+      "description": "**Goal:** Document F34 (swap-interpose HUD, Menu toggle, four metrics, opt-out blocklist vs opt-in remap, SharedSettings + fallback, spike-verdict pointer) + terse 0.3.0 release notes for F33+F34.\n\n**Files:** Modify docs/h700-fixes.md (bump F1-F33 → F1-F34; add F34 section). Modify README.md if it enumerates fixes/ports behavior.\n\n**Acceptance Criteria:** F34 section covers HUD/toggle/metrics/opt-out-allowlist/SharedSettings+fallback + spike-verdict pointer; range line bumped to F1-F34; terse 0.3.0 release-notes stub (Fixes F33+F34, Upgrading from v0.2.3 = unzip-over).\n\n**Verify:** grep -n 'F34' docs/h700-fixes.md → shows new section + bumped range line.\n\n```json:metadata\n{\"files\": [\"docs/h700-fixes.md\", \"README.md\"], \"verifyCommand\": \"grep -n 'F34' docs/h700-fixes.md\", \"acceptanceCriteria\": [\"F34 section describes HUD, toggle, metrics, opt-out/allowlist, SharedSettings + fallback, spike-verdict pointer\", \"F1-F33 range line bumped to F1-F34\", \"terse 0.3.0 release-notes stub covering F33+F34\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: Device gate — per-engine verification (RG SP)",
+      "status": "completed",
+      "blockedBy": [4, 5, 6],
+      "description": "**Goal:** USER-ORDERED GATE. Prove the HUD works on-device across each engine family, confirm SharedSettings offsets + live keymon updates, verify toggle-off restores rendering, confirm zero regression to allowlisted remap/keyboard ports.\n\n**USER-ORDERED GATE — NON-SKIPPABLE.** Requested by the user in the current conversation. MUST NOT be closed by walking around it, declaring it 'verified inline', or substituting a cheaper check. Close only after every acceptanceCriteria item is re-validated independently with output captured.\n\n**Files:** None (verification). May yield a one-line GT_SS_OFF_* correction in assets/gt-input-remap.c and/or additions to assets/gt-hud-blocklist.txt.\n\n**Acceptance Criteria:** SharedSettings offsets confirmed (nudge + re-dump; correct constants + re-run test-05 if not); keymon live-update confirmed; per-engine HUD pass on GameMaker/LOVE/solarus (toggle, correct live values, toggle-off pristine, no crash); raw-SDL (2048) no-op no crash; regression: allowlisted remap + gptk keyboard ports still correct under GT_INPUT_REMAP=1; GT_HUD_DEBUG trace shows expected swap path.\n\n**Verify:** device session on ssh root@10.0.1.16: install shim (scp-temp+mv), launch each engine's port, toggle HUD, capture GT_HUD_DEBUG log + Camille's visual confirmation per item.\n\n```json:metadata\n{\"files\": [\"assets/gt-input-remap.c\", \"assets/gt-hud-blocklist.txt\"], \"verifyCommand\": \"ssh root@10.0.1.16 (device gate — see steps in plan)\", \"acceptanceCriteria\": [\"SharedSettings VOL/BRI offsets confirmed on-device (constants corrected + test-05 re-run if needed)\", \"keymon updates volume/brightness live during a port\", \"HUD toggles + shows correct live values on GameMaker, LOVE, solarus; toggle-off leaves rendering pristine; no crash\", \"raw-SDL port shows no HUD and does not crash\", \"allowlisted remap + keyboard ports still have correct input\", \"GT_HUD_DEBUG trace shows expected swap path\"], \"userGate\": true, \"tags\": [\"user-gate\"], \"requiresUserSpecification\": false, \"gateScope\": \"one-then-all\", \"modelTier\": \"standard\"}\n```"
+    }
+  ],
+  "lastUpdated": "2026-08-26T16:11:05Z"
+}

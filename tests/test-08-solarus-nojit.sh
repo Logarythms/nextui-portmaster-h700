@@ -5,8 +5,14 @@
 # bundles LuaJIT 2.1.0-beta3, whose aarch64 JIT miscompiles under quest
 # load on this device — gdb-attach caught SIGSEGV jumps into unmapped
 # trace memory from libluajit during Tunics! map transitions (2026-08-23).
-# run_port injects "-s=<pak>/files/solarus-nojit.lua" (a jit.off()
-# pre-script) into any port script that defines a solarus runtime.
+#
+# F36: solarus's -s= flag runs its VALUE as inline Lua, not a path, so the
+# original F28 form (-s=<pak>/files/solarus-nojit.lua) errored at launch
+# and the JIT stayed on. run_port now injects
+# -s="dofile('<pak>/files/solarus-nojit.lua')" (still a jit.off()
+# pre-script, just loaded via dofile()) into any port script that defines
+# a solarus runtime, and self-heals launchers still carrying the old
+# bare-path -s= form from before F36.
 work="$SANDBOX/pmpak"; mkdir -p "$work"
 cp "$TROOT/fixtures/portmaster-pak-skeleton/pak.json.fixture" "$work/pak.json"
 cp "$TROOT/fixtures/portmaster-pak-skeleton/launch.sh.fixture" "$work/launch.sh"
@@ -37,6 +43,10 @@ runtime="love_11.5"
 EOF
 sed -n '/grep -q "\^runtime=/,/^    fi$/p' "$work/launch.sh" > "$fake/hook.sh"
 [ -s "$fake/hook.sh" ] || { echo "could not extract nojit hook"; exit 1; }
+# the inner "fi" (heal/elif if) is 8-space-indented; only the outer
+# 4-space "fi" should end the sed range, so both branches must be present.
+assert_contains "$fake/hook.sh" 'Healing solarus no-JIT'
+assert_contains "$fake/hook.sh" 'elif ! grep -q "solarus-nojit"'
 # the hook uses device-style `sed -i` (busybox/GNU); BSD sed (macOS dev
 # machines) needs `-i ''`. Shim it into PATH only where sed is not GNU.
 case $(sed --version 2>/dev/null) in
@@ -49,11 +59,25 @@ case $(sed --version 2>/dev/null) in
     ;;
 esac
 PLATFORM=h700 PAK_DIR=/mnt/PAK ROM_PATH="$fake/Tunics.sh" ROM_NAME="Tunics.sh" sh "$fake/hook.sh" >/dev/null
-assert_contains "$fake/Tunics.sh" '"$runtime" -s=/mnt/PAK/files/solarus-nojit.lua $GAMEDIR/\*.solarus'
+assert_contains "$fake/Tunics.sh" "\"\$runtime\" -s=\"dofile('/mnt/PAK/files/solarus-nojit.lua')\" \$GAMEDIR/\*.solarus"
 PLATFORM=h700 PAK_DIR=/mnt/PAK ROM_PATH="$fake/Tunics.sh" ROM_NAME="Tunics.sh" sh "$fake/hook.sh" >/dev/null
 assert_eq "$(grep -c 'solarus-nojit' "$fake/Tunics.sh")" "1" "guard held on second run"
 PLATFORM=h700 PAK_DIR=/mnt/PAK ROM_PATH="$fake/Other.sh" ROM_NAME="Other.sh" sh "$fake/hook.sh" >/dev/null
 assert_not_contains "$fake/Other.sh" 'solarus-nojit'
+
+# behavioral: F36 self-heal — a launcher still carrying the old bare-path
+# -s= form (pre-F36) must be rewritten to the dofile() form, not left
+# broken or double-injected.
+cat > "$fake/Heal.sh" <<'EOF'
+runtime="solarus-1.6.5"
+"$runtime" -s=/mnt/PAK/files/solarus-nojit.lua $GAMEDIR/*.solarus
+EOF
+PLATFORM=h700 PAK_DIR=/mnt/PAK ROM_PATH="$fake/Heal.sh" ROM_NAME="Heal.sh" sh "$fake/hook.sh" >/dev/null
+assert_contains "$fake/Heal.sh" "\"\$runtime\" -s=\"dofile('/mnt/PAK/files/solarus-nojit.lua')\" \$GAMEDIR/\*.solarus"
+assert_not_contains "$fake/Heal.sh" '-s=/mnt/PAK/files/solarus-nojit.lua '
+PLATFORM=h700 PAK_DIR=/mnt/PAK ROM_PATH="$fake/Heal.sh" ROM_NAME="Heal.sh" sh "$fake/hook.sh" >/dev/null
+assert_eq "$(grep -c 'solarus-nojit' "$fake/Heal.sh")" "1" "heal idempotent on second run"
+assert_contains "$fake/Heal.sh" "\"\$runtime\" -s=\"dofile('/mnt/PAK/files/solarus-nojit.lua')\" \$GAMEDIR/\*.solarus"
 
 # the pre-script asset itself must exist and actually turn the JIT off
 assert_contains "$ROOT/assets/solarus-nojit.lua" 'jit.off()'
