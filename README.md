@@ -55,6 +55,7 @@ Confirmed working out of the box on the RG SP:
 - [Deltarune](https://portmaster.games/detail.html?name=deltarune)
 - [Downwell](https://portmaster.games/detail.html?name=downwell)
 - [Lasagna Boy Classic](https://portmaster.games/detail.html?name=lasagnaboyclassic) (via the built-in input translator — automatic)
+- [Mina the Hollower](https://portmaster.games/detail.html?name=mina) (its Metal→GLES engine is switched to native OpenGL ES 3 automatically — see below)
 - [Pizza Tower](https://portmaster.games/detail.html?name=pizzatower) (its FMOD sound is fixed automatically — see below)
 - [Road Invaders](https://portmaster.games/detail.html?name=road.invaders) (via the built-in input translator — automatic)
 - [The Starlit Escape](https://portmaster.games/detail.html?name=thestarlitescape) (via the built-in input translator — automatic)
@@ -89,6 +90,8 @@ Gamepad input on this platform has limits, so ports fall into three groups:
 
 Sound works out of the box too, including GameMaker ports that use FMOD (like Pizza Tower): the h700's audio chip only lets one program use it at a time, which normally leaves FMOD silent, and the pak works around that automatically for any FMOD port — nothing to turn on.
 
+Some ports (like Mina the Hollower) run a Mac engine that renders through a Metal→GLES translation and needs a *native* OpenGL ES 3 context, which the RG SP's GPU supports but the default graphics wrapper doesn't hand it — so the game crashed on launch. The pak detects those ports and switches them to native ES 3 automatically, and the on-screen overlay works there too — again, nothing to turn on.
+
 Full details: [`docs/h700-fixes.md`](docs/h700-fixes.md).
 
 ## Build from source
@@ -100,7 +103,7 @@ make pak     # builds dist/Emus/h700/PORTS.pak.zip from pinned, checksum-verifie
 make test    # runs the shell test suite
 ```
 
-The `LD_PRELOAD` shims (input-remap and FMOD-audio) ship prebuilt in `assets/`; rebuilding them (`make shim`) needs Docker.
+The `LD_PRELOAD` shims (input-remap, FMOD-audio, and GLES-profile) ship prebuilt in `assets/`; rebuilding them (`make shim`) needs Docker.
 
 ## Fixing games that ignore your buttons
 

@@ -596,6 +596,68 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-gles3-profile: F37 — gothic-engine (Yacht Club) machismo ports —
+  # e.g. Mina the Hollower by bmdhacks, a Darling/machismo Mac-arm64 port —
+  # emit GLSL ES 3.10 shaders and take a GLES fallback when Vulkan is absent,
+  # which on h700 is ALWAYS (Mali-G31 Bifrost exports no vk*). On this pak that
+  # GLES context binds GL4ES (libGL.so.1, GL 2.1/GLSL 1.20), whose ShaderConv
+  # down-converts "#version 310 es" to "#version 100" while leaving layout(...)
+  # in — invalid ES1.00, so the first shader fails to compile and the render
+  # thread SIGABRTs before anything draws: the port never starts. The device's
+  # Mali r20p0 blob natively speaks OpenGL ES 3.2 and compiles the shaders
+  # as-is; it just never got reached. Fix, two parts together: (1) shadow the
+  # pak's GL4ES libGL/libEGL with the device's NATIVE Mali ES3 wrappers
+  # (/usr/lib/libGLESv2.so.2 -> libGL.so.1, /usr/lib/libEGL.so.1 -> libEGL.so.1)
+  # inside the port's own libs dir, which its launcher puts first in
+  # LD_LIBRARY_PATH, so SDL dlopens native Mali GL/EGL by name and GL4ES never
+  # loads (must shadow libEGL too: the pak's libEGL is GL4ES's own and needs
+  # symbol `hardext` from GL4ES's libGL, so a libGL-only shadow breaks
+  # libgothic_patches' load); (2) preload gt-gles3-profile.so, which forces an
+  # ES3 SDL GL profile (without it SDL binds EGL_OPENGL_API on native Mali EGL
+  # and the context creation fails). LD_PRELOAD-alone can't do part 1: the GL
+  # library is committed at the game's SDL_CreateWindow via machismo's Mach-O
+  # resolver + gothic's in-memory SDL trampoline, both bypassing LD_PRELOAD.
+  # Auto-gated on the gothic signature libs/libgothic_patches.so (like the FMOD
+  # auto-gate on libs/libfmod*.so*): the failure is engine-level and
+  # h700-invariant, so the fix is gothic-generic by construction — every gothic
+  # port on h700 needs exactly this, none can use GL4ES. cmp-guarded + cp -fp
+  # (F12/F27: a fresh mtime would retrigger rebuild-if-newer ports); source-
+  # existence guarded (a future BaseOS without the wrapper just skips, no broken
+  # file). Self-contained to the port dir and self-heals on reinstall. Same
+  # run_port window as gt-h700-port-remap / gt-h700-fmod-audio; order among the
+  # three is irrelevant (disjoint interposed symbols, all prepend LD_PRELOAD).
+  # Device-verified on Mina the Hollower 2026-08-27 (boots + plays on native
+  # ES3, with sound); Mina is the only gothic port installed/tested so far.
+  # NOTE: on a native-ES3 context the F34 HUD first drew a solid black quad
+  # (the engine binds a sampler object to texture unit 0, which overrides the
+  # HUD's glTexParameteri); that is fixed at the source in F38 (gt-input-remap.c
+  # unbinds it around the HUD draw), so gothic ports are NOT HUD-blocklisted.
+  if ! grep -q 'gt-h700-gles3-profile' "$f"; then
+    awk '$0 == "    \"$PAK_DIR/bin/bash\" \"$ROM_PATH\"" {
+      print "    # gt-h700-gles3-profile (F37): gothic-engine machismo ports need a NATIVE"
+      print "    # Mali ES3 GL context; on GL4ES their ES 3.10 shaders fail to compile and"
+      print "    # the port never starts. Shadow the pak GL4ES libGL/libEGL with the device"
+      print "    # native Mali wrappers (the port libs dir is first in LD_LIBRARY_PATH) and"
+      print "    # preload gt-gles3-profile.so to force an ES3 SDL profile. Auto-gated on the"
+      print "    # gothic signature; cmp-guarded + cp -fp (a fresh mtime retriggers rebuilds)."
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && [ -f \"$GAMEDIR/libs/libgothic_patches.so\" ]; then"
+      print "        echo \"Applying native-GLES3 GL fix for $ROM_NAME (gothic-engine machismo port)\""
+      print "        for gt_gl in \"/usr/lib/libGLESv2.so.2:libGL.so.1\" \"/usr/lib/libEGL.so.1:libEGL.so.1\"; do"
+      print "            gt_gl_src=\"${gt_gl%%:*}\"; gt_gl_dst=\"$GAMEDIR/libs/${gt_gl##*:}\""
+      print "            if [ -f \"$gt_gl_src\" ] && ! cmp -s \"$gt_gl_src\" \"$gt_gl_dst\" 2>/dev/null; then"
+      print "                echo \"GL fix: shadowing ${gt_gl_dst##*/} with native $gt_gl_src\""
+      print "                cp -fp \"$gt_gl_src\" \"$gt_gl_dst\""
+      print "            fi"
+      print "        done"
+      print "        export LD_PRELOAD=\"$PAK_DIR/lib/gt-gles3-profile.so${LD_PRELOAD:+:$LD_PRELOAD}\""
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-source-heal: F29 — harbourmaster recreates its default
   # *.source.json files ONLY on first-run or a config-version migration
   # (harbour.py: the first-run branch writes HM_SOURCE_DEFAULTS;
@@ -1028,6 +1090,10 @@ PMEOF
   mkdir -p "$assembled/lib"
   cp "$ASSETS/gt-input-remap.so" "$assembled/lib/gt-input-remap.so"
   cp "$ASSETS/gt-fmod-audio.so" "$assembled/lib/gt-fmod-audio.so"
+  # gt-h700-gles3-profile: F37 — the ES3-profile shim, preloaded by run_port
+  # only for gothic-engine machismo ports (auto-gated on libgothic_patches.so;
+  # see edit_portmaster_launch).
+  cp "$ASSETS/gt-gles3-profile.so" "$assembled/lib/gt-gles3-profile.so"
 
   # gt-h700-port-remap: F25 — pak-shipped default list of ports that get the
   # shim preloaded at launch (read by the run_port hook that

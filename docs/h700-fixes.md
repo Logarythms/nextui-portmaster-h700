@@ -719,7 +719,15 @@ above: volume is int32 index 4 (byte offset 16) and brightness is int32
 index 1 (byte offset 4), both on NextUI's 0–20 / 0–10 scales — the pre-gate
 guess was wrong, and the shipped shim now reads 16/4.
 
-### 0.3.0 (targeted)
+### Unreleased
+
+**Fixes**
+- F37: native OpenGL ES 3 for gothic/machismo ports — Mina the Hollower now boots
+- F38: in-game HUD renders on native-ES3 contexts (sampler-object fix)
+
+**Upgrading from 0.3.0:** unzip-over (self-healing); no manual steps.
+
+### 0.3.0
 
 **Fixes**
 - F33: faster port startup (splash + redundant-patch trims)
@@ -945,3 +953,76 @@ loader. Bundle a glibc tree in the pak (StockOS MOD's is a ready, device-matched
 2.38 build; a clean-room build from Debian/crosstool-NG is the licensing-safe
 long-term source) and gate each candidate port with an on-device run. Priority is
 **low** until a wanted port actually needs it.
+
+## Native OpenGL ES 3 for gothic/machismo ports (F37)
+
+*Mina the Hollower* (porter: bmdhacks) runs the macOS Apple-Silicon build of the
+game through `machismo` — a Mach-O loader based on Darling — plus a port shim
+`libgothic_patches.so` that translates Yacht Club's "gothic" engine (Metal) to
+GLES. The engine emits GLSL **ES 3.10** shaders and, when Vulkan is absent —
+always on this hardware, the Mali-G31 (Bifrost) blob exports no `vk*` — takes a
+GLES fallback. On this pak that fallback bound **GL4ES** (`libGL.so.1`, a desktop
+GL 2.1 / GLSL 1.20 wrapper), whose ShaderConv rewrites `#version 310 es` down to
+`#version 100` while leaving `layout(...)` in place — invalid GLSL ES 1.00, so
+the first shader (`copy.vert`) fails to compile and the render thread `SIGABRT`s
+before drawing a frame. The port never started.
+
+The device is fully capable: the Mali r20p0 blob natively exposes **OpenGL ES 3.2
+/ GLSL ES 3.20** and compiles those shaders as-is. It just never got reached,
+because SDL only binds the native GLES driver when the context is requested with
+an ES profile, and the profile is chosen inside the port's own compiled window
+shim (no env knob — `LIBGL_ES`, `LIBGL_SHADERNOGLES`, `SDL_VIDEO_GL_DRIVER`,
+`SDL_VIDEODRIVER=mali` were all tried on-device; each still landed on GL4ES).
+
+The fix is two parts, applied together by `run_port` and gated on the gothic
+signature `libs/libgothic_patches.so` (auto-detected like the FMOD gate, not a
+per-port list — the failure is engine-level and h700-invariant, so it is
+gothic-generic by construction):
+
+1. **Shadow the GL stack with the device's native Mali wrappers.** Copy
+   `/usr/lib/libGLESv2.so.2` → `$GAMEDIR/libs/libGL.so.1` and
+   `/usr/lib/libEGL.so.1` → `$GAMEDIR/libs/libEGL.so.1` (the port launcher puts
+   its own `libs` first in `LD_LIBRARY_PATH`), so SDL `dlopen`s native Mali GL/EGL
+   by name and GL4ES never loads. `libEGL` **must** be shadowed too: the pak's
+   `libEGL.so.1` is GL4ES's own and needs the `hardext` symbol from GL4ES's
+   `libGL`, so a `libGL`-only shadow breaks `libgothic_patches`' load. Copies are
+   `cmp`-guarded and `cp -fp` (a fresh mtime would retrigger rebuild-if-newer
+   ports), and copied straight from the device — no proprietary blob is bundled.
+2. **Preload `gt-gles3-profile.so`**, which forces an ES3 SDL GL profile
+   (interposing `SDL_GL_SetAttribute`/`SDL_GL_CreateContext`). Without it SDL
+   binds `EGL_OPENGL_API` on native Mali EGL and context creation fails.
+   `LD_PRELOAD` alone can't do part 1: the GL library is committed at the game's
+   `SDL_CreateWindow` via machismo's Mach-O resolver and gothic's in-memory SDL
+   trampoline, both of which bypass `LD_PRELOAD`.
+
+Device-verified 2026-08-27: `GL caps version="OpenGL ES 3.2 … r20p0" renderer=
+"Mali-G31" glsl="OpenGL ES GLSL ES 3.20"`, boots and plays. Sound works too — the
+gothic audio path is native SDL2 → ALSA, and the 214 MB `pcm_cache` the engine
+builds is a decode cache, not a prerequisite (a fresh, deleted-cache launch still
+had sound from the loading screen). Likely unblocks the whole class of bmdhacks
+gothic/machismo ES3 ports, not just Mina, though Mina is the only one tested.
+
+## In-game HUD on native-ES3 contexts: the sampler-object fix (F38)
+
+With F37, Mina runs on a native ES3 context — and the F34 HUD, which had only
+ever run on GL4ES (desktop GL 2.1) contexts, drew a **solid black rectangle**
+there (correct size, toggled correctly, but no content). Geometry, shader and
+blend were all fine; only the sampled texel came back black, and the HUD's own
+texture setup was ES-correct (NEAREST filter, CLAMP_TO_EDGE, no mipmaps → a
+complete texture).
+
+The cause is an ES3-only piece of state that does not exist in GL4ES's GL 2.1:
+a **sampler object**. A `GT_HUD_DEBUG` dump added to the draw path showed the
+engine leaves **sampler object #1 bound to texture unit 0** (`sampler[unit0]=1`).
+A bound sampler object *overrides* the texture unit's `glTexParameteri`, so the
+HUD's NEAREST/no-mipmap parameters were ignored and the engine's sampler (a
+mipmap filter) governed our no-mipmap texture — an incomplete combination that
+samples opaque black on ES.
+
+The fix (`gt-input-remap.c`): save the sampler bound to unit 0, `glBindSampler(0,
+0)` to unbind it so the HUD's own parameters apply, and restore the engine's
+sampler afterward. `glBindSampler` is resolved **non-fatally** — it does not
+exist on GL4ES/ES2, so the pointer stays `NULL` there and the entire code path is
+skipped, leaving the HUD byte-for-byte unchanged on every existing port
+(regression-checked on-device across the full installed set, 2026-08-27). Because
+the HUD now renders on native ES3, gothic ports are **not** HUD-blocklisted.

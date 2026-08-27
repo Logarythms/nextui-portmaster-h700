@@ -3,3 +3,8 @@
 # (leading #) are inert. The HUD is ON by default for every other port;
 # users can add their own entries in
 # $USERDATA_PATH/PORTS-portmaster/use-hud-blocklist (no rebuild needed).
+#
+# (No pak-shipped entries. Gothic-engine machismo ports run on a native ES3
+# context where the HUD once drew a solid black quad; that is fixed at the
+# source in F38 — gt-input-remap.c unbinds the engine's unit-0 sampler object
+# around its draw — so those ports are NOT blocklisted. See docs/h700-fixes.md.)

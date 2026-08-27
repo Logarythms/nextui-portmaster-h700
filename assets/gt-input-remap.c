@@ -1291,6 +1291,20 @@ static void *(*p_SDL_GL_GetProcAddress)(const char *);
 static void *(*p_eglGetProcAddress)(const char *);
 static int gt_gl_src_sdl, gt_gl_src_egl, gt_gl_src_dlsym; /* debug: resolver tallies */
 
+/* ES3-only glGet params (GLES2/gl2.h stops at ES2). Used by the GT_HUD_DEBUG
+ * state dump in gt_hud_draw to see what a native-ES3 engine (e.g. the gothic
+ * machismo ports) leaves bound — a sampler object or non-default VAO on unit 0
+ * overrides/redirects our texture setup and can make the HUD sample black,
+ * neither of which exists on the GL4ES (GL 2.1) contexts the HUD was built on. */
+#ifndef GL_SAMPLER_BINDING
+#define GL_SAMPLER_BINDING 0x8919
+#endif
+#ifndef GL_VERTEX_ARRAY_BINDING
+#define GL_VERTEX_ARRAY_BINDING 0x85B5
+#endif
+/* ES3-only; NULL on GL4ES (resolved non-fatally) — see gt_gl_resolve / gt_hud_draw. */
+static void (*p_glBindSampler)(GLuint, GLuint);
+
 static GLuint    (*p_glCreateShader)(GLenum);
 static void      (*p_glShaderSource)(GLuint, GLsizei, const GLchar *const *, const GLint *);
 static void      (*p_glCompileShader)(GLuint);
@@ -1396,6 +1410,18 @@ static int gt_gl_resolve(void) {
     GT_GL(p_glGetVertexAttribiv, "glGetVertexAttribiv", void(*)(GLuint,GLenum,GLint*));
     GT_GL(p_glGetVertexAttribPointerv, "glGetVertexAttribPointerv", void(*)(GLuint,GLenum,void**));
 #undef GT_GL
+    /* Optional, ES3-only — NOT counted in `missing`. A native-ES3 engine can
+     * bind a sampler object to a texture unit, which OVERRIDES the unit's
+     * glTexParameteri; the gothic machismo ports (e.g. Mina the Hollower) leave
+     * sampler #1 on unit 0, forcing a mipmap min-filter our no-mipmap HUD
+     * texture can't satisfy, so it samples opaque BLACK (device-confirmed
+     * 2026-08-27: "sampler[unit0]=1"). gt_hud_draw unbinds it around our draw.
+     * GL4ES (GL 2.1) has no sampler objects, so this stays NULL there and the
+     * HUD is byte-for-byte unaffected on every existing port. */
+    p_glBindSampler = (void (*)(GLuint, GLuint))gt_resolve1("glBindSampler");
+    if (gt_hud_debug())
+        fprintf(stderr, "gt-hud: glBindSampler = %p (%s)\n",
+                (void *)p_glBindSampler, p_glBindSampler ? "ES3 sampler-objects" : "absent (GL4ES/ES2)");
     if (missing) {
         gt_gl_dead = 1;
         if (gt_hud_debug())
@@ -1581,6 +1607,10 @@ static void gt_hud_draw(void) {
     p_glActiveTexture(GL_TEXTURE0);
     GLint s_tex0 = 0;
     p_glGetIntegerv(GL_TEXTURE_BINDING_2D, &s_tex0);
+    /* Save the sampler object bound to unit 0 (ES3 only) so we can unbind it for
+     * our draw and put the engine's back afterward. Zero on GL4ES (skipped). */
+    GLint s_sampler0 = 0;
+    if (p_glBindSampler) p_glGetIntegerv(GL_SAMPLER_BINDING, &s_sampler0);
 
     /* Save the two vertex-attrib arrays we are about to overwrite. */
     GLint aloc[2]; aloc[0] = gt_loc_pos; aloc[1] = gt_loc_uv;
@@ -1598,6 +1628,28 @@ static void gt_hud_draw(void) {
 
     /* Drain any error the game left pending, so the post-draw check is ours. */
     { int guard = 0; while (p_glGetError() != GL_NO_ERROR && guard++ < 16) {} }
+
+    /* GT_HUD_DEBUG: dump the ES3-only state the game left bound (once). A bound
+     * sampler object on unit 0 overrides our glTexParameteri (mipmap filter ->
+     * our no-mipmap texture samples opaque black); a non-default VAO redirects
+     * our attrib setup; a masked colormask blocks our writes. None exist on
+     * GL4ES, so this is inert there. Queries may raise GL_INVALID_ENUM on a
+     * non-ES3 context — drained right after so the post-draw check stays ours. */
+    if (gt_hud_debug()) {
+        static int dumped = 0;
+        if (!dumped) {
+            GLint d_samp = -1, d_vao = -1, d_cmask[4] = {-1,-1,-1,-1};
+            p_glGetIntegerv(GL_SAMPLER_BINDING, &d_samp);
+            p_glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &d_vao);
+            p_glGetIntegerv(GL_COLOR_WRITEMASK, d_cmask);
+            fprintf(stderr, "gt-hud: ES3-state @draw: sampler[unit0]=%d vao=%d "
+                    "colormask=%d,%d,%d,%d tex0=%d prog=%d\n",
+                    d_samp, d_vao, d_cmask[0], d_cmask[1], d_cmask[2], d_cmask[3],
+                    s_tex0, s_prog);
+            { int g = 0; while (p_glGetError() != GL_NO_ERROR && g++ < 16) {} }
+            dumped = 1;
+        }
+    }
 
     /* ---- geometry: top-left-origin pixel rect -> NDC with a Y-flip (GL NDC
      * is +y up, origin bottom-left). Panel lands top-right. UVs put buffer
@@ -1619,6 +1671,10 @@ static void gt_hud_draw(void) {
     p_glUseProgram(gt_prog);
     /* active unit is already GL_TEXTURE0 */
     p_glBindTexture(GL_TEXTURE_2D, gt_tex);
+    /* Unbind any sampler object the engine left on unit 0, so the params below
+     * actually govern our texture (a leftover mipmap-filter sampler otherwise
+     * makes our no-mipmap texture sample black). No-op on GL4ES (NULL). */
+    if (p_glBindSampler) p_glBindSampler(0, 0);
     /* NPOT-safe params (panel is 80x46): CLAMP_TO_EDGE + NEAREST, no mipmaps.
      * Row stride 80*4 = 320 B is 4-aligned, so the default UNPACK_ALIGNMENT
      * holds and glPixelStorei is not needed. */
@@ -1665,6 +1721,7 @@ static void gt_hud_draw(void) {
     }
     p_glBindBuffer(GL_ARRAY_BUFFER, (GLuint)s_arraybuf);
     p_glBindTexture(GL_TEXTURE_2D, (GLuint)s_tex0); /* on unit 0, still active */
+    if (p_glBindSampler) p_glBindSampler(0, (GLuint)s_sampler0); /* engine's sampler back on unit 0 */
     p_glActiveTexture((GLenum)s_active);
     p_glUseProgram((GLuint)s_prog);
     p_glViewport(s_vp[0], s_vp[1], s_vp[2], s_vp[3]);  /* unchanged by us; restored defensively */
