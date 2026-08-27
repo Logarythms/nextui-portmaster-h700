@@ -484,6 +484,36 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-nxengine-settings: F39 — install the h700-correct nxengine-evo
+  # (Cave Story Evo) controls + resolution ONCE per port install. The port
+  # reads the raw SDL joystick and binds directions to buttons 8-11 (h700's
+  # d-pad is hat0, so they were dead) and faces to 0-7 (h700 faces are raw
+  # 3-13, so they were scrambled), and defaults resolution to 720x720 (overran
+  # the 720x480 fb). Marker-gated — NOT the always-overwrite F27 overlay — so a
+  # player's in-game rebinds / resolution changes persist across launches; a
+  # port reinstall recreates conf/ without the marker and re-heals. Anchored on
+  # the nintendo_file line (inside run_port, after GAMEDIR resolves, before the
+  # port executes and would pick its own width-variant settings.dat).
+  if ! grep -q 'gt-h700-nxengine-settings' "$f"; then
+    awk '$0 == "    nintendo_file=$(find \"$USERDATA_PATH/PORTS-portmaster\" -maxdepth 1 -iname \"nintendo*\" -type f)" {
+      print "    # gt-h700-nxengine-settings: install h700-correct nxengine-evo controls +"
+      print "    # resolution once (d-pad->hat0, faces->raw indices, res 640x480). Marker-"
+      print "    # gated so in-game rebinds persist; port reinstall wipes conf/ -> re-heals."
+      print "    gt_nxe_src=\"$PAK_DIR/files/nxengine-h700/settings.dat\""
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && [ \"${GAMEDIR##*/}\" = \"nxengine-evo\" ] \\"
+      print "        && [ -f \"$gt_nxe_src\" ] && [ ! -f \"$GAMEDIR/conf/nxengine/.gt-h700-settings\" ]; then"
+      print "        echo \"Installing h700 controls/resolution for nxengine-evo (Cave Story Evo)\""
+      print "        mkdir -p \"$GAMEDIR/conf/nxengine\""
+      print "        cp -f \"$gt_nxe_src\" \"$GAMEDIR/conf/nxengine/settings.dat\""
+      print "        touch \"$GAMEDIR/conf/nxengine/.gt-h700-settings\""
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-solarus-nojit: F28 — the solarus runtime bundles LuaJIT
   # 2.1.0-beta3, whose aarch64 JIT miscompiles under quest load on this
   # device: gdb-attach caught SIGSEGV jumps into unmapped trace memory from
@@ -1105,6 +1135,18 @@ PMEOF
   # in-game HUD overlay is known to misbehave (read by the same run_port
   # hook); users extend via use-hud-blocklist in userdata without rebuilding.
   cp "$ASSETS/gt-hud-blocklist.txt" "$assembled/files/gt-hud-blocklist.txt"
+
+  # gt-h700-nxengine-settings: F39 — h700-correct nxengine-evo (Cave Story Evo)
+  # controls + resolution. nxengine-evo reads the raw SDL joystick and binds
+  # actions to button INDICES (and a resolution INDEX) in settings.dat; the
+  # porter's defaults assume a device whose d-pad is buttons 8-11 and a taller
+  # screen, so on h700 (d-pad = hat0, faces raw 3-13, 720x480 fb) the d-pad was
+  # dead, faces scrambled, and the 720x720 render overran the screen. run_port
+  # installs this file ONCE per port install (see edit_portmaster_launch). Kept
+  # OUT of files/port-fixes/ on purpose: the F27 overlay re-copies every launch,
+  # which would revert the user's in-game rebinds/resolution changes.
+  mkdir -p "$assembled/files/nxengine-h700"
+  cp "$ASSETS/nxengine-evo-h700-settings.dat" "$assembled/files/nxengine-h700/settings.dat"
 
   # gt-h700-solarus-nojit: F28 — the -s pre-script run_port injects into
   # solarus port invocations (see edit_portmaster_launch).

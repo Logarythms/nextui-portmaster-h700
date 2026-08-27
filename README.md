@@ -50,7 +50,7 @@ Confirmed working out of the box on the RG SP:
 - [Apotris](https://portmaster.games/detail.html?name=apotris)
 - [Balatro](https://portmaster.games/detail.html?name=balatro)
 - [BYTEPATH](https://portmaster.games/detail.html?name=bytepath) (via the built-in input translator — automatic)
-- [Cave Story (Evo)](https://portmaster.games/detail.html?name=cave.story-evo) (the *Evo* version — **not** "Cave Story lr", which can't run here)
+- [Cave Story (Evo)](https://portmaster.games/detail.html?name=cave.story-evo) (the *Evo* version — **not** "Cave Story lr", which can't run here; its controls and screen fit are corrected for the RG SP automatically — see below)
 - [Celeste](https://portmaster.games/detail.html?name=celeste)
 - [Deltarune](https://portmaster.games/detail.html?name=deltarune)
 - [Downwell](https://portmaster.games/detail.html?name=downwell)
@@ -91,6 +91,8 @@ Gamepad input on this platform has limits, so ports fall into three groups:
 Sound works out of the box too, including GameMaker ports that use FMOD (like Pizza Tower): the h700's audio chip only lets one program use it at a time, which normally leaves FMOD silent, and the pak works around that automatically for any FMOD port — nothing to turn on.
 
 Some ports (like Mina the Hollower) run a Mac engine that renders through a Metal→GLES translation and needs a *native* OpenGL ES 3 context, which the RG SP's GPU supports but the default graphics wrapper doesn't hand it — so the game crashed on launch. The pak detects those ports and switches them to native ES 3 automatically, and the on-screen overlay works there too — again, nothing to turn on.
+
+A few ports read the raw joystick directly and keep their own button and screen-size choices in a config file that was tuned for other hardware. Cave Story (Evo) is one: on the RG SP its d-pad did nothing, its face buttons were scrambled, and the picture overran the bottom of the screen. The pak installs an RG SP-correct control-and-resolution config for it on first launch — and only the first launch, so any rebinding or resolution change you make in-game afterward is kept. Nothing to turn on.
 
 Full details: [`docs/h700-fixes.md`](docs/h700-fixes.md).
 

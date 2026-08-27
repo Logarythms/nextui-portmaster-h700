@@ -724,6 +724,7 @@ guess was wrong, and the shipped shim now reads 16/4.
 **Fixes**
 - F37: native OpenGL ES 3 for gothic/machismo ports — Mina the Hollower now boots
 - F38: in-game HUD renders on native-ES3 contexts (sampler-object fix)
+- F39: Cave Story (Evo) controls + screen fit — d-pad, buttons and resolution corrected for the RG SP
 
 **Upgrading from 0.3.0:** unzip-over (self-healing); no manual steps.
 
@@ -1026,3 +1027,58 @@ exist on GL4ES/ES2, so the pointer stays `NULL` there and the entire code path i
 skipped, leaving the HUD byte-for-byte unchanged on every existing port
 (regression-checked on-device across the full installed set, 2026-08-27). Because
 the HUD now renders on native ES3, gothic ports are **not** HUD-blocklisted.
+
+## Cave Story (Evo): raw-joystick bindings baked into settings.dat (F39)
+
+Cave Story (Evo) runs on **nxengine-evo**, which reads the **raw SDL joystick**
+directly (`SDL_JoystickOpen` + `SDL_JOYBUTTONDOWN`/`SDL_JOYHATMOTION` events — no
+GameController API, and no `SDL_JoystickGetButton` polling) and binds each in-game
+action to a specific joystick **button index**, plus a **resolution index**, in a
+binary config file `conf/nxengine/settings.dat`. The port ships that file per
+display width, tuned for the porter's reference hardware. On the RG SP three of
+those assumptions are wrong:
+
+- **Directions** were bound to joystick **buttons 8–11**. The RG SP's d-pad is
+  not buttons — it is an SDL **hat** (evdev `ANBERNIC-keys` exposes `ABS_HAT0X`/
+  `ABS_HAT0Y` → SDL hat 0; the device's three real axes are `ABS_RX/RY/RZ`). So
+  the engine waited for button events the hardware never sends → **d-pad dead**.
+- **Face actions** were bound to buttons **0–7**, but this device's face buttons
+  enumerate at raw indices **3–13** (the hardware-measured table in
+  `assets/gt-input-remap.c`) → **scrambled buttons**.
+- **Resolution** defaulted to index 3 = **720×720** (a square mode), 240 px taller
+  than the RG SP's **720×480** visible framebuffer → the picture **overran the
+  bottom** of the screen.
+
+This is not the F25 joystick-index shift and not something the `gt-input-remap.so`
+shim can fix: the shim rewrites the SDL event stream, but nxengine's problem is
+its *stored binding table*, and no index rewrite turns a hat into the buttons the
+table names. The fix is to give the port an **RG SP-correct `settings.dat`**.
+
+`settings.dat` format (verified): magic `"NXS7"` (u32 @0), then config bytes, a
+`resolution` int32 @4, and 28 binding records @36 — each 24 bytes = six
+little-endian int32 `key, jbut, jhat, jhat_value, jaxis, jaxis_value` (`-1` =
+unbound; `jhat_value` is the SDL_HAT bitmask UP=1/RIGHT=2/DOWN=4/LEFT=8). Records
+run in enum order (Left, Right, Up, Down, Jump, Fire, Strafe, PrevWpn, NextWpn,
+Inventory, MapSystem, Esc, …). The engine rewrites the file from its loaded
+mappings on options-close and on every in-game save/load, so a hand-authored file
+survives as long as `NXS7` is intact — it is written back byte-identical.
+
+`assets/nxengine-evo-h700-settings.dat` is that file: directions → hat 0, faces →
+this device's raw indices (JUMP = raw 4 / bottom, FIRE = raw 3 / right, Strafe =
+Y, Prev/Next weapon = Select/Start, Inventory = L1, Map = R1), resolution index 2
+= **640×480** (the largest 4:3 mode that fits 720×480). Keyboard bindings are left
+intact. `run_port` installs it into the port's `conf/nxengine/` **once**, gated by
+a `.gt-h700-settings` marker — deliberately *not* the F27 port-fixes overlay,
+which re-copies every launch and would revert a player's in-game rebinds or
+resolution changes. A port reinstall recreates `conf/` without the marker, so the
+fix self-heals. Cave Story stays **off** the input-remap allowlist (it needs
+bindings, not translation); the HUD is unaffected.
+
+Device-verified 2026-08-27 (boots, plays, d-pad + A=jump/B=fire + down-to-interact
+all correct). Two accepted limitations, both engine/platform-level, not
+config-fixable: nxengine's hat handler resolves a single direction on a hard
+diagonal (horizontal wins — no simultaneous up+left), and the 640×480 frame lands
+left-aligned rather than centered because the RG SP presents straight to fbdev
+with no compositor to honor SDL's window-centering request (the frame is fully
+visible; a thin bar sits on the right). The engine's own Options → Controls /
+Resolution menus can be used to adjust either, and those choices persist.
