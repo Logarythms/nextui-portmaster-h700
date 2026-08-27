@@ -719,7 +719,7 @@ above: volume is int32 index 4 (byte offset 16) and brightness is int32
 index 1 (byte offset 4), both on NextUI's 0–20 / 0–10 scales — the pre-gate
 guess was wrong, and the shipped shim now reads 16/4.
 
-### Unreleased
+### 0.3.1
 
 **Fixes**
 - F37: native OpenGL ES 3 for gothic/machismo ports — Mina the Hollower now boots
