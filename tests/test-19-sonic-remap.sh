@@ -5,11 +5,19 @@
 # on h700 (probe-confirmed isGameController=1, valid mapping) — yet controls
 # are dead, an RSDK-internal defect this pak can't fix natively. Fall back to
 # the pak's keyboard-synthesis path: put the launchers on the remap list and
-# overlay a corrected sonic.gptk (via the generic F27 overlay mechanism,
-# already covered by test-07) mapping the gamepad to RSDK's [Keyboard 1]
-# scancodes (Up=82 Down=81 Left=80 Right=79, A=29(z) B=27(x) X=4(a) Y=22(s),
-# Start=40(enter)). back=esc is deliberately kept, not repurposed, to
-# preserve a quit path.
+# overlay a corrected sonic.gptk per game (via the generic F27 overlay
+# mechanism, already covered by test-07).
+#
+# Device trace (2026-08-28) showed the shim's v1 index-remap cross-swaps
+# physical faces vs. gptk button names on h700: physical A(south)=gptk `b`,
+# B(east)=gptk `a`, X(west)=gptk `y`, Y(north)=gptk `x`. RSDK's shared action
+# map has only two jump actions (A=jump, C=jump; B=pause; X/Y/Z=nothing), so
+# to make the physical A+B faces jump with DISTINCT keys (no duplicate-key
+# crash class) gptk `b`->RSDK-A key and gptk `a`->RSDK-C key. The RSDK-A/
+# RSDK-C keys differ per [Keyboard 1] table, so sonic1 and sonic2 gptks are
+# NOT identical: sonic1 = b->z(29,A) a->c(6,C); sonic2 = b->a(4,A) a->d(7,C).
+# X/Y are deliberately left unmapped. back=esc is deliberately kept, not
+# repurposed, to preserve a quit path.
 
 assert_contains "$ROOT/assets/gt-remap-ports.txt" '^Sonic 1.sh$'
 assert_contains "$ROOT/assets/gt-remap-ports.txt" '^Sonic 2.sh$'
@@ -17,10 +25,6 @@ assert_contains "$ROOT/assets/gt-remap-ports.txt" '^Sonic 2.sh$'
 for p in sonic1 sonic2; do
   f="$ROOT/assets/port-fixes/$p/sonic.gptk"
   [ -f "$f" ] || { echo "missing overlay gptk: $f"; exit 1; }
-  assert_contains "$f" '^a = z$'      # A -> jump (scancode 29)
-  assert_contains "$f" '^b = x$'      # B (scancode 27)
-  assert_contains "$f" '^x = a$'      # X (scancode 4)
-  assert_contains "$f" '^y = s$'      # Y (scancode 22)
   assert_contains "$f" '^start = enter$'
   assert_contains "$f" '^back = esc$' # quit safety: NOT repurposed to tab
   assert_contains "$f" '^up = up$'
@@ -29,9 +33,14 @@ for p in sonic1 sonic2; do
   assert_contains "$f" '^right = right$'
 done
 
-# sonic1 and sonic2 overlays are identical
-diff "$ROOT/assets/port-fixes/sonic1/sonic.gptk" "$ROOT/assets/port-fixes/sonic2/sonic.gptk" \
-  || { echo "sonic1/sonic2 gptk overlays differ"; exit 1; }
+# per-game mapping: physical A(south)=gptk b, physical B(east)=gptk a
+f1="$ROOT/assets/port-fixes/sonic1/sonic.gptk"
+assert_contains "$f1" '^b = z$'  # sonic1 RSDK-A key
+assert_contains "$f1" '^a = c$'  # sonic1 RSDK-C key
+
+f2="$ROOT/assets/port-fixes/sonic2/sonic.gptk"
+assert_contains "$f2" '^b = a$'  # sonic2 RSDK-A key
+assert_contains "$f2" '^a = d$'  # sonic2 RSDK-C key
 
 sh -n "$ROOT/build/build-pak.sh"
 assert_contains "$ROOT/build/build-pak.sh" 'port-fixes/sonic1'

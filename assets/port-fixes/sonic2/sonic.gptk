@@ -1,22 +1,18 @@
-# F43 — gt-input-remap overlay for the RSDK Sonic ports. RSDKv4/vB reads
-# SDL_GameController, which IS recognized correctly on h700 (probe-confirmed
-# isGameController=1, valid mapping), but controls stay dead — an
-# RSDK-internal defect this pak cannot fix natively. Fall back to the pak's
-# keyboard-synthesis path: gt-input-remap.so (preloaded via
-# assets/gt-remap-ports.txt) reads this file and synthesizes SDL key events
-# from gamepad presses, matching RSDK's [Keyboard 1] settings.ini scancodes
-# (Up=82 Down=81 Left=80 Right=79, A=29(z) B=27(x) X=4(a) Y=22(s),
-# Start=40(enter)). Only the `name = key` subset gt-input-remap.c's parser
-# accepts is used here (see gt_button_slot/gt_dir_slot/gt_keyname).
-#
-# back = esc is deliberately KEPT (not repurposed to tab/Select) to preserve
-# a quit path — remapping it away locked a user out in a prior session.
+# F43 — gt-input-remap overlay for the RSDK Sonic ports (device-verified fix).
+# The shim's v1 index-remap cross-swaps physical faces vs. gptk button names
+# on h700: physical A(south)=gptk `b`, B(east)=gptk `a`, X(west)=gptk `y`,
+# Y(north)=gptk `x` (device trace, 2026-08-28). RSDK's shared action map has
+# only two jump actions (A=jump, C=jump; B=pause; X/Y/Z=nothing), so to get
+# the physical A+B faces jumping with DISTINCT keys (no duplicate-key
+# crash class) we map gptk `b`->this game's RSDK-A key and gptk `a`->this
+# game's RSDK-C key. X/Y are deliberately left unmapped — only two jump
+# keys exist to bind. The RSDK-A/RSDK-C keys differ per game (separate
+# [Keyboard 1] tables); this file is Sonic 2's. back=esc is kept, not
+# repurposed, to preserve a quit path.
 back = esc
 start = enter
-a = z
-b = x
-x = a
-y = s
+b = a
+a = d
 up = up
 down = down
 left = left
