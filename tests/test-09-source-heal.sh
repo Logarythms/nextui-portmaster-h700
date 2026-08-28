@@ -27,7 +27,7 @@ pugwash_line=$(grep -n '^        pugwash --debug' "$work/launch.sh" | head -1 | 
 [ "$heal_line" -lt "$pugwash_line" ] || { echo "source-heal hook is not before the pugwash start"; exit 1; }
 
 # the shipped defaults must match harbourmaster's own HM_SOURCE_DEFAULTS
-# (pinned pylibs 2025.03): both sources, fetch-on-next-load state.
+# (pinned pylibs; identical from 2025.03 through the 2026.07.28 base): both sources, fetch-on-next-load state.
 src020="$ROOT/assets/gt-source-defaults/020_portmaster.source.json"
 src021="$ROOT/assets/gt-source-defaults/021_portmaster.multiverse.source.json"
 assert_contains "$src020" '"prefix": "pm"'

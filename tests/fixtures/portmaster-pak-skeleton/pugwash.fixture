@@ -1,10 +1,10 @@
-# SYNTHETIC fixture — NOT the full real pugwash (the real 2.13.0 file is
+# SYNTHETIC fixture — NOT the full real pugwash (the real 2.14.0 file is
 # 100KB+). This exists only so the unit tests have the exact anchor lines
 # this repo's edit_portmaster_pugwash (build/build-pak.sh) contracts on, in
 # realistic context: a do_draw method with the 12-space
 # `if not self.updated:` guard it sed-replaces (F6), and the
 # portmaster_check_update def line the F22 no-self-update gate inserts
-# after (function opening mirrors the real 2025.03 file). The real file's
+# after (function opening mirrors the real file, identical in 2025.03 and 2026.07.28). The real file's
 # anchors are verified separately by hands-on hardware-gate testing, not by
 # this fixture.
 import os

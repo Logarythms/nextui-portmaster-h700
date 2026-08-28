@@ -9,7 +9,7 @@ At build time the recipe downloads the following upstream components from their
 own release/distribution channels. They are NOT redistributed by this
 repository and remain under their respective licenses:
 
-- ben16w/minui-portmaster 2.13.0  (MIT)   https://github.com/ben16w/minui-portmaster
+- ben16w/minui-portmaster 2.14.0  (MIT)   https://github.com/ben16w/minui-portmaster
 - PortMaster                       https://portmaster.games/
 - josegonzalez/minui-presenter     (MIT)  https://github.com/josegonzalez/minui-presenter
 - Debian bullseye shared libraries (LGPL/BSD/zlib/etc.), via deb.debian.org

@@ -2,9 +2,12 @@
 . "$(dirname -- "$0")/helpers.sh"
 
 # PortMaster h700 repackage — E1/E2/E4 edit coverage (see docs/h700-fixes.md
-# for the fix-by-fix rationale). Fixtures are the REAL 2.13.0
-# launch.sh/pak.json; if a real file stops matching an anchor on a version
-# bump, fix anchor AND fixture together.
+# for the fix-by-fix rationale). Fixtures are the REAL launch.sh/pak.json
+# from the ben16w 2.14.0 release ZIP — not the tagged source: upstream builds
+# its releases from a get-weston branch whose launch.sh carries a weston
+# bootstrap block main lacks, and archives pak.json one version behind the
+# tag (the 2.14.0 zip says "2.13.0"). If a real file stops matching an
+# anchor on a version bump, fix anchor AND fixture together.
 # NOTE: fixtures are stored as launch.sh.fixture / pak.json.fixture (not
 # .sh/.json) because the real upstream launch.sh trips ShellCheck style
 # warnings (SC2221/SC2222/SC2034) that would fail a `find . -name '*.sh'`

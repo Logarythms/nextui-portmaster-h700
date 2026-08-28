@@ -4,8 +4,16 @@
 
 MP_URL="https://github.com/josegonzalez/minui-presenter/releases/download/0.13.0/minui-presenter-h700-nextui"
 MP_SHA256=6156dfa1032c8729d0bb606eb6d37d23defbcdd41c9ef2888f2e1e1ffc8a2def
-PM_PAK_URL="https://github.com/ben16w/minui-portmaster/releases/download/2.13.0/PORTS.pak.zip"
-PM_PAK_SHA256=67c291e94e96d58c08a33e982f61bfe6ec016b47dbe5c41a87f5511583e2939c   # observed sha, double-download cross-checked (upstream publishes none)
+PM_PAK_URL="https://github.com/ben16w/minui-portmaster/releases/download/2.14.0/PORTS.pak.zip"
+PM_PAK_SHA256=969ca07385b40b72c230143e474fb393ce28c1d550ce311db8c97580aa020252   # observed sha, double-download cross-checked (upstream publishes none)
+# Provenance notes (2026-08-28): upstream builds its release zips from a
+# get-weston branch, NOT the tag — the zip's launch.sh carries a
+# weston_pkg_0.2.squashfs bootstrap block that main lacks, and the zip ships
+# that 44.6MB image under files/. The bundled PortMaster runtime is
+# PortMaster-GUI release 2026.07.28-1212 (byte-identical control folder); its
+# PortMaster/version file reads 2026.06.23-0015, which is the stable-channel
+# label PortMaster bakes in, not the release tag (2.13.0 read 2025.03.03-0141
+# for the same reason). Test fixtures mirror the ZIP's files, not the tag.
 # gate finding 2026-08-22: pak bundles Debian bullseye python3.11, whose _ctypes
 # needs libffi.so.7 (TrimUI supplies it via /usr/trimui/lib; h700 has none —
 # BaseOS ships only ABI-incompatible libffi.so.8). Ship libffi7 3.3-6 (the exact

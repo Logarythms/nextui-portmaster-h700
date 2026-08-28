@@ -2,8 +2,8 @@
 . "$(dirname -- "$0")/helpers.sh"
 
 # F19: pm_platform_helper stub. 2026-era port scripts (deltarune, Tunics!,
-# the RHH GameMaker ports) call pm_platform_helper unguarded; the pinned
-# 2025.03 runtime predates it, so every such launch logged "command not
+# the RHH GameMaker ports) call pm_platform_helper unguarded; the 2025.03
+# runtime pinned through v0.3.2 predated it, so every such launch logged "command not
 # found" (and a `set -e` script would die outright). Upstream's current
 # implementation — read from a 2026 funcs.txt that a partial GUI self-update
 # left on-device — is an effective no-op (PM_PIPE dialog-exit + printf ""),
@@ -11,8 +11,10 @@
 # because install_control_txt re-installs that file into the live control
 # folder at EVERY launch, which also makes the stub self-healing after a
 # partial self-update replaces the live copy (observed 2026-08-23).
-# Fixture is the REAL upstream files/control.txt from the ben16w 2.13.0 zip
-# (pulled from a v0.1.0 device install, where the build leaves it unedited).
+# Fixture is the REAL upstream files/control.txt from the ben16w 2.14.0 zip
+# (byte-identical to 2.13.0's). Since the 2.14.0 base upstream's funcs.txt
+# defines pm_platform_helper itself; the stub stays as belt-and-braces (it is
+# sourced after funcs.txt, same behavior).
 work="$SANDBOX/pmpak"; mkdir -p "$work"
 cp "$TROOT/fixtures/portmaster-pak-skeleton/pak.json.fixture" "$work/pak.json"
 cp "$TROOT/fixtures/portmaster-pak-skeleton/launch.sh.fixture" "$work/launch.sh"

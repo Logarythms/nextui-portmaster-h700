@@ -1,6 +1,6 @@
 #!/bin/sh
 # build-pak.sh — assemble a PortMaster.pak for the Anbernic RG SP (h700) under
-# NextUI, from ben16w/minui-portmaster 2.13.0 + pinned upstream deps.
+# NextUI, from ben16w/minui-portmaster 2.14.0 + pinned upstream deps.
 # Usage: build-pak.sh portmaster
 #   GT_STAGE_EDIT_ONLY=<dir> runs ONLY the in-place edit functions against <dir>
 #   (no network, no docker) — used by tests/.
@@ -928,7 +928,7 @@ edit_portmaster_pugwash() { # $1=PortMaster/pugwash path
   # at its built-in ~30fps, it is a frame limiter, not a stop, so leaving it
   # alone is correct. tg5040 never sets the env, so pugwash's runtime
   # behavior there is byte-identical to upstream. Exact-line sed match is
-  # safe: the pak.zip is checksum-pinned (2.13.0) and this exact 12-space
+  # safe: the pak.zip is checksum-pinned (2.14.0) and this exact 12-space
   # line occurs exactly once in the file.
   f=$1
   if ! grep -q 'gt-h700-redraw' "$f"; then
@@ -958,11 +958,15 @@ edit_portmaster_pugwash() { # $1=PortMaster/pugwash path
 
 edit_portmaster_control() { # $1=files/control.txt path
   # gt-h700-pm-platform-helper: F19 — 2026-era port scripts call
-  # pm_platform_helper unguarded; the pinned 2025.03 runtime predates it, so
-  # every such launch logs "command not found" (and any script running under
-  # `set -e` would die outright). Upstream's current implementation (read
-  # from a 2026 funcs.txt on-device) is an effective no-op — a PM_PIPE
-  # dialog-exit plus `printf ""` — so a faithful stub is behavior-correct.
+  # pm_platform_helper unguarded; the 2025.03 runtime this pak pinned through
+  # v0.3.2 predated it, so every such launch logged "command not found" (and
+  # any script running under `set -e` would die outright). Upstream's
+  # implementation is an effective no-op — a PM_PIPE dialog-exit plus
+  # `printf ""` — so a faithful stub is behavior-correct. The 2.14.0 base
+  # (PortMaster 2026.07.28) defines it in funcs.txt itself; the stub is kept
+  # as belt-and-braces (control.txt sources funcs.txt first, so this later
+  # definition wins — identical behavior) and still self-heals a control
+  # folder whose funcs.txt went missing.
   # Appended to files/control.txt, which install_control_txt re-installs
   # into the live control folder at EVERY launch — also self-healing after
   # a partial GUI self-update replaces the live copy (observed 2026-08-23).
@@ -970,9 +974,9 @@ edit_portmaster_control() { # $1=files/control.txt path
   if ! grep -q 'gt-h700-pm-platform-helper' "$f"; then
     cat >> "$f" <<'PMEOF'
 
-# gt-h700-pm-platform-helper: stub for 2026-era ports — the pinned 2025.03
-# runtime predates pm_platform_helper; upstream's current implementation is
-# an effective no-op (PM_PIPE dialog-exit + printf ""). See build-pak.sh.
+# gt-h700-pm-platform-helper: no-op stub for 2026-era ports (upstream's own
+# funcs.txt definition is the same PM_PIPE dialog-exit + printf ""); kept as
+# belt-and-braces since the 2.14.0 base. See build-pak.sh.
 pm_platform_helper() {
     if [ -e "${PM_PIPE:-}" ] && command -v PortMasterDialogExit >/dev/null 2>&1; then
         PortMasterDialogExit
@@ -1028,7 +1032,7 @@ mkdir -p "$DIST"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 
 do_portmaster() {
-  # h700 repackage of ben16w/minui-portmaster 2.13.0 — see docs/h700-fixes.md
+  # h700 repackage of ben16w/minui-portmaster 2.14.0 — see docs/h700-fixes.md
   # for the fix-by-fix rationale. Everything assembles in $tmp; a pin
   # mismatch or failed build leaves $DIST untouched.
   fetch "$PM_PAK_URL" "$PM_PAK_SHA256" "$tmp/ports-pak.zip"
@@ -1337,6 +1341,9 @@ PMEOF
   # (observed on-device 2026-08-23; the failure was invisible until F17
   # restored patcher logging). Stage the same pinned binary into
   # PortMaster/ at build time, fail-closed like every other staged file.
+  # Since the 2.14.0 base the control folder ships its own 7zzs.aarch64
+  # (PortMaster-GUI 2026.07.28); staging ben16w's bin/ copy over it keeps the
+  # path guaranteed regardless of upstream packaging (same tool, fail-closed).
   gt_7zzs_src="$assembled/bin/7zzs.aarch64"
   if [ ! -f "$gt_7zzs_src" ]; then
     mkdir -p "$tmp/binx"

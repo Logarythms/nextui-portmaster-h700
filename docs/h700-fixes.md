@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F40) below match the internal numbering used while these were
+Fix IDs (F1–F45) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. A closing section records the ports
 that this platform genuinely can't run.
@@ -360,16 +360,21 @@ user's original `data.win` files**. Observed live on hardware: a
 24-minute "successful" patch left six byte-identical empty APKs, and the
 game data was gone (with F17 masking the whole thing). Fix: the build
 stages the same pinned `7zzs.aarch64` into `PortMaster/` fail-closed, so
-the patcher's expected path exists.
+the patcher's expected path exists. (Since 0.4.0 the upstream control
+folder ships its own `7zzs.aarch64` too; the staged copy keeps the path
+guaranteed regardless of upstream packaging.)
 
 ## `pm_platform_helper: command not found` (F19)
 
 2026-era port scripts call `pm_platform_helper` unguarded; the runtime
-version this pak pins (2025.03) predates it. In current upstream
-PortMaster the function is an effective no-op (a dialog-pipe close plus
-`printf ""`), so the fix appends a faithful stub to the pak's
-`control.txt` — which `launch.sh` re-installs into the live control
-folder at every launch, making the stub self-healing as well.
+version this pak pinned through 0.3.2 (PortMaster 2025.03) predated it. In
+current upstream PortMaster the function is an effective no-op (a
+dialog-pipe close plus `printf ""`), so the fix appends a faithful stub to
+the pak's `control.txt` — which `launch.sh` re-installs into the live
+control folder at every launch, making the stub self-healing as well.
+Since 0.4.0 the pinned base (PortMaster 2026.07.28) defines the function in
+`funcs.txt` itself; the stub is kept as belt-and-braces (it is sourced
+after `funcs.txt`, with identical behavior).
 
 ## Ports that reset `LD_LIBRARY_PATH` lost every pak-shipped library (F21)
 
