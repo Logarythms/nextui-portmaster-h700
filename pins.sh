@@ -9,7 +9,7 @@ PM_PAK_SHA256=969ca07385b40b72c230143e474fb393ce28c1d550ce311db8c97580aa020252  
 # Provenance notes (2026-08-28): upstream builds its release zips from a
 # get-weston branch, NOT the tag — the zip's launch.sh carries a
 # weston_pkg_0.2.squashfs bootstrap block that main lacks, and the zip ships
-# that 44.6MB image under files/. The bundled PortMaster runtime is
+# that 44.6MB image under files/ (removed at build — F46). The bundled PortMaster runtime is
 # PortMaster-GUI release 2026.07.28-1212 (byte-identical control folder); its
 # PortMaster/version file reads 2026.06.23-0015, which is the stable-channel
 # label PortMaster bakes in, not the release tag (2.13.0 read 2025.03.03-0141

@@ -987,6 +987,20 @@ PMEOF
   fi
 }
 
+strip_weston_runtime() { # $1=pak root (the dir holding files/)
+  # gt-h700-weston-strip: F46 — upstream builds its release zip from a
+  # get-weston branch that bundles a 44.6MB custom weston_pkg_0.2.squashfs
+  # under files/ and moves it into PortMaster/libs at first boot
+  # (bootstrap_files). Weston/Crusty ports cannot display on h700 at all (no
+  # DRM/KMS scanout — docs/h700-fixes.md "Ports this platform can't run"), so
+  # the image is dead weight in the zip and on the SD card. Remove it at
+  # build; upstream's bootstrap block stays (its `[ -f ]` guard makes it a
+  # no-op) and the official runtime remains downloadable through
+  # harbourmaster should a future fix ever need it. A copy already sitting in
+  # a device's PortMaster/libs is not touched (the zip ships no libs/).
+  rm -f "$1/files/weston_pkg_0.2.squashfs"
+}
+
 append_controllerdb() { # $1=repo mapping file $2=target gamecontrollerdb
   # Appends measured RG SP mapping lines (gate-filled; header-only = no-op).
   # Dedupe by GUID so restaging after the gate stays idempotent.
@@ -1019,6 +1033,7 @@ if [ -n "${GT_STAGE_EDIT_ONLY:-}" ]; then
       if [ -f "$GT_STAGE_EDIT_ONLY/gamecontrollerdb_nintendo.txt" ]; then
         append_controllerdb "$pm_db_dir/gamecontrollerdb-h700-nintendo.txt" "$GT_STAGE_EDIT_ONLY/gamecontrollerdb_nintendo.txt"
       fi
+      strip_weston_runtime "$GT_STAGE_EDIT_ONLY"
       ;;
     *) echo "usage: build-pak.sh portmaster" >&2; exit 1 ;;
   esac
@@ -1202,6 +1217,7 @@ do_portmaster() {
   edit_portmaster_control "$assembled/files/control.txt"
   append_controllerdb "$ASSETS/gamecontrollerdb-h700-xbox.txt" "$assembled/files/gamecontrollerdb_xbox.txt"
   append_controllerdb "$ASSETS/gamecontrollerdb-h700-nintendo.txt" "$assembled/files/gamecontrollerdb_nintendo.txt"
+  strip_weston_runtime "$assembled"
 
   # libgl insurance: CFW_NAME resolves to "Base OS" on the device; if a port
   # sources libgl_${CFW_NAME}.txt unguarded, hand it the default config

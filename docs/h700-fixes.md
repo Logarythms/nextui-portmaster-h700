@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F45) below match the internal numbering used while these were
+Fix IDs (F1–F46) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. A closing section records the ports
 that this platform genuinely can't run.
@@ -743,6 +743,22 @@ above: volume is int32 index 4 (byte offset 16) and brightness is int32
 index 1 (byte offset 4), both on NextUI's 0–20 / 0–10 scales — the pre-gate
 guess was wrong, and the shipped shim now reads 16/4.
 
+### 0.4.0
+
+**Upstream base:** ben16w/minui-portmaster 2.13.0 → 2.14.0 — the bundled
+PortMaster runtime moves from the 2025.07 release to PortMaster-GUI
+2026.07.28 (a year of harbourmaster/GUI/patcher fixes, rebuilt
+gptokeyb/libinterpose, `funcs.txt` now defines `pm_platform_helper`, the
+control folder now ships `7zzs`), plus jq 1.8.2, squashfs-tools 4.7.5 and
+7-Zip 26.02. Every h700 patch applies unchanged; F18 and F19 become
+belt-and-braces.
+
+**Fixes**
+- F46: dropped the bundled tg5040 Weston runtime image from the pak (−44 MB download and SD footprint) — Weston ports can't display on the RG SP regardless, and the official image stays downloadable on demand
+
+**Upgrading from 0.3.2:** unzip-over (self-healing); no manual steps. A
+`weston_pkg_0.2.squashfs` already in `PortMaster/libs/` is left as is.
+
 ### 0.3.2
 
 **Fixes**
@@ -1193,3 +1209,26 @@ aarch64 artifact can never ship under a 32-bit name.
 Device-verified 2026-08-28 on a clean install: boots, plays, native ES 3.2
 render, sound from the loading screen, every control correct (Camille confirmed),
 and the in-game HUD working.
+
+## The bundled Weston runtime image is dead weight here (F46)
+
+Upstream's release zips are not built from the tagged source: the release
+workflow runs on a `get-weston` branch whose `launch.sh` carries a
+`bootstrap_files` block that moves a bundled `files/weston_pkg_0.2.squashfs`
+(44.6 MB, a custom Westonpack build fetched from a Google Drive link at
+upstream build time) into `PortMaster/libs/` on first boot, and — since
+2.14.0 — writes an `.md5` sidecar plus a `harbour.py` tweak so harbourmaster
+treats that custom build as "Verified" instead of replacing it with the
+official one. That is how every RG SP running this pak came to have a
+Weston runtime installed: not from a PortMaster download, but from the zip.
+
+On h700 the whole Weston/Crusty class cannot reach the panel (no DRM/KMS
+scanout — see "Ports this platform can't run" above), so the image is pure
+dead weight: 44 MB in every download and on every SD card, for a runtime no
+installed port can use. Fix: the build removes the file from the assembled
+pak. Upstream's bootstrap block is left in place — its `[ -f ... ]` guard
+makes it a no-op — and the `.md5`/`harbour.py` tweak is harmless without the
+file. Nothing on an existing device changes (the zip ships no `libs/`, so a
+previously installed copy stays), and should a future fix ever make Weston
+viable here, harbourmaster can still download the official
+`weston_pkg_0.2.squashfs` on demand.
