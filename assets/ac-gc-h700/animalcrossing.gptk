@@ -1,0 +1,31 @@
+# OpenCrossing (Animal Crossing) — gt-input-remap shim gptk.
+# For this port the shim drives keyboard STATE synthesis directly from the
+# gamepad's evdev device (launcher sets GT_EVDEV_KEYS=1) because AC's stock
+# 32-bit SDL 2.0.12 delivers no joystick/controller events to the game at all.
+#
+# AC's keybindings.ini binds (SDL scancode names):
+#   A=Space  B=Left Shift  X=X  Y=Y  L=Q  R=E  Z=Z  Start=Return
+#   Main Stick=W/A/S/D   C-Stick(camera)=arrows
+# The RG SP has no analog stick, so the D-pad drives the Main Stick (walking);
+# L2/R2 rotate the camera (C-stick left/right).
+#
+# NOTE the cross-assignment on the four face buttons: the RG SP is Nintendo-
+# labelled but the ports run an Xbox-positional layout, so the shim's slot for
+# gptk `a`/`x` is physically the B/Y button and vice-versa. Device-confirmed
+# 2026-08-28 (a/b + x/y felt swapped under the straight mapping), so we cross-
+# assign here to match every other port: gptk `a`->game B, `b`->game A,
+# `x`->game Y, `y`->game X.
+up = w
+down = s
+left = a
+right = d
+a = left_shift
+b = space
+x = y
+y = x
+l1 = q
+r1 = e
+l2 = left
+r2 = right
+back = z
+start = enter

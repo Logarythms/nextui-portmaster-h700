@@ -539,6 +539,40 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-ac-launcher: F45 — Animal Crossing is a 32-bit armhf port (NextUI is
+  # aarch64-only). The pak ships a complete 32-bit runtime + a 32-bit build of
+  # the input shim + a launcher that wires them up (files/ac-gc-h700/ and
+  # lib/gt-input-remap.armhf.so, staged in do_portmaster). copy_game_scripts
+  # reverts the port's launcher to its pristine porter source every
+  # PortMaster-GUI session (which on NextUI has the wrong controlfolder fallback
+  # and none of the armhf runtime wiring), so re-install our launcher over the
+  # live ROM_PATH each launch. cmp-guarded so an unchanged launcher is never
+  # rewritten (a fresh mtime would retrigger rebuild-if-newer ports — the F12/F27
+  # rule; AC itself is a native binary and doesn't rebuild, but the guard keeps
+  # the mtime honest). Detected by the AnimalCrossing binary in the resolved
+  # GAMEDIR, so a user-renamed .sh still heals and no other port is ever touched.
+  # Anchored on the nintendo_file line (inside run_port, after GAMEDIR resolves,
+  # before the port executes) like the F27/F39 overlays.
+  if ! grep -q 'gt-h700-ac-launcher' "$f"; then
+    awk '$0 == "    nintendo_file=$(find \"$USERDATA_PATH/PORTS-portmaster\" -maxdepth 1 -iname \"nintendo*\" -type f)" {
+      print "    # gt-h700-ac-launcher: F45 — re-install the pak-hosted armhf launcher for"
+      print "    # Animal Crossing (32-bit port on aarch64 NextUI); copy_game_scripts reverts"
+      print "    # it to the pristine porter source each GUI session. cmp-guarded; detected by"
+      print "    # the AnimalCrossing binary in GAMEDIR so no other port is touched."
+      print "    gt_ac_src=\"$PAK_DIR/files/ac-gc-h700/Animal Crossing.sh\""
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && [ \"${GAMEDIR##*/}\" = \"ac-gc\" ] \\"
+      print "        && [ -f \"$GAMEDIR/AnimalCrossing\" ] && [ -f \"$gt_ac_src\" ] \\"
+      print "        && ! cmp -s \"$gt_ac_src\" \"$ROM_PATH\" 2>/dev/null; then"
+      print "        echo \"Installing h700 armhf launcher for Animal Crossing\""
+      print "        cp -f \"$gt_ac_src\" \"$ROM_PATH\""
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-solarus-nojit: F28 — the solarus runtime bundles LuaJIT
   # 2.1.0-beta3, whose aarch64 JIT miscompiles under quest load on this
   # device: gdb-attach caught SIGSEGV jumps into unmapped trace memory from
@@ -1201,6 +1235,14 @@ PMEOF
   # ports (auto-gated on $GAMEDIR/sonic2013; see edit_portmaster_launch).
   cp "$ASSETS/gt-sdl-audio-init.so" "$assembled/lib/gt-sdl-audio-init.so"
 
+  # gt-input-remap.armhf.so: F45 — the 32-bit build of the input shim, preloaded
+  # by the Animal Crossing launcher (a 32-bit armhf port; see the ac-gc-h700
+  # staging below and edit_portmaster_launch's gt-h700-ac-launcher). Fail-closed
+  # on the ELF class so a stale aarch64 build can never ship under this name.
+  cp "$ASSETS/gt-input-remap.armhf.so" "$assembled/lib/gt-input-remap.armhf.so"
+  file "$assembled/lib/gt-input-remap.armhf.so" | grep -q 'ELF 32-bit.*ARM' \
+    || { echo "gt-input-remap.armhf.so is not a 32-bit ARM shared object" >&2; exit 1; }
+
   # gt-h700-port-remap: F25 — pak-shipped default list of ports that get the
   # shim preloaded at launch (read by the run_port hook that
   # edit_portmaster_launch adds; users extend via use-remap-ports in
@@ -1331,6 +1373,24 @@ PMEOF
   cp "$ASSETS/port-fixes/sonic1/sonic.gptk" "$assembled/files/port-fixes/sonic1/sonic.gptk"
   mkdir -p "$assembled/files/port-fixes/sonic2"
   cp "$ASSETS/port-fixes/sonic2/sonic.gptk" "$assembled/files/port-fixes/sonic2/sonic.gptk"
+
+  # gt-h700-ac-runtime: F45 — the complete pak-hosted runtime for Animal
+  # Crossing (a 32-bit armhf port; NextUI is aarch64-only, so the port's own
+  # aarch64 libs dir is empty and the stock SDL/GL/Mali stack is missing). The
+  # launcher (files/ac-gc-h700/Animal Crossing.sh, re-installed over the port's
+  # own every launch by run_port's gt-h700-ac-launcher hook) points at this
+  # runtime and gptk by absolute $PAK_DIR path, so the harbourmaster install
+  # itself stays untouched (only save/conf are written there). libs.armhf is the
+  # 15-lib 32-bit runtime — SDL 2.0.12, the Mali-G31 blob (libmali.so.0), and
+  # their deps — sourced from the stock Anbernic card; the gptk is the pad->key
+  # map read by the shim (GT_EVDEV_KEYS synthesis). Fail-closed on the Mali
+  # blob's ELF class so an aarch64 lib set can never ship under this name.
+  mkdir -p "$assembled/files/ac-gc-h700/libs.armhf"
+  cp "$ASSETS/ac-gc-h700/libs.armhf/"* "$assembled/files/ac-gc-h700/libs.armhf/"
+  cp "$ASSETS/ac-gc-h700/animalcrossing.gptk" "$assembled/files/ac-gc-h700/animalcrossing.gptk"
+  cp "$ASSETS/ac-gc-h700/Animal Crossing.sh" "$assembled/files/ac-gc-h700/Animal Crossing.sh"
+  file "$assembled/files/ac-gc-h700/libs.armhf/libmali.so.0" | grep -q 'ELF 32-bit.*ARM' \
+    || { echo "ac-gc-h700 libmali.so.0 is not a 32-bit ARM shared object" >&2; exit 1; }
 
   # gt-h700-gmtoolkit: F24 — RHH GameMaker patchscripts hard-require
   # "$controlfolder/gmtoolkit.$DEVICE_ARCH" (see the PM_GMTOOLKIT pin

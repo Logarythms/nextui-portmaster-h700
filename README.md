@@ -94,6 +94,8 @@ Some ports (like Mina the Hollower) run a Mac engine that renders through a Meta
 
 A few ports read the raw joystick directly and keep their own button and screen-size choices in a config file that was tuned for other hardware. Cave Story (Evo) is one: on the RG SP its d-pad did nothing, its face buttons were scrambled, and the picture overran the bottom of the screen. The pak installs an RG SP-correct control-and-resolution config for it on first launch — and only the first launch, so any rebinding or resolution change you make in-game afterward is kept. Nothing to turn on.
 
+A very small number of ports are built only for older 32-bit handhelds and don't ship anything the RG SP can run. Animal Crossing (the GameCube decompilation) is one: nothing happened when you launched it. The pak bundles a complete 32-bit graphics-and-sound runtime for it and wires the game up to that automatically, so it now boots, plays with full picture and sound, uses the standard button layout, and shows the on-screen overlay. Install it from PortMaster as usual; nothing to turn on, and your saves are left alone.
+
 Full details: [`docs/h700-fixes.md`](docs/h700-fixes.md).
 
 ## Build from source

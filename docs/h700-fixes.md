@@ -742,6 +742,11 @@ guess was wrong, and the shipped shim now reads 16/4.
 
 **Fixes**
 - F40: Sonic 1 & Sonic 2 (RSDK decompilation) now launch — shipped the missing `libsndfile` audio chain
+- F41: Sonic 1 & 2 fill the screen — corrected the RSDK render width for the 720×480 panel
+- F42: Sonic 1 & 2 sound — force the SDL audio-subsystem init the RSDK runtime skips
+- F43: Sonic 1 & 2 controls — keyboard-synthesis fallback for the dead RSDK GameController path
+- F44: in-game HUD on the Sonic ports — geometry save/restore around the software-HUD draw
+- F45: Animal Crossing (GameCube decomp) now plays — a bundled 32-bit armhf runtime brings render, audio, input and the HUD to the aarch64-only NextUI
 
 **Upgrading from 0.3.1:** unzip-over (self-healing); no manual steps.
 
@@ -1108,3 +1113,78 @@ left-aligned rather than centered because the RG SP presents straight to fbdev
 with no compositor to honor SDL's window-centering request (the frame is fully
 visible; a thin bar sits on the right). The engine's own Options → Controls /
 Resolution menus can be used to adjust either, and those choices persist.
+
+## Animal Crossing: a 32-bit armhf port on aarch64-only NextUI (F45)
+
+Animal Crossing (the OpenCrossing GameCube decompilation) ships a **32-bit
+armhf** `AnimalCrossing` binary and an armhf runtime, targeting the 32-bit
+PortMaster handhelds (RG35XX and friends). NextUI on the RG SP is
+**aarch64-only** — `DEVICE_ARCH=aarch64`, so the porter's `libs.${DEVICE_ARCH}`
+directory is empty and none of the 32-bit SDL / GL / Mali stack the binary links
+against is present. The port could not even reach `main()`. The device's kernel
+carries `CONFIG_COMPAT`, so a 32-bit userspace *runs*; it just has nothing to run
+against. The fix is to bundle a complete 32-bit runtime and wire the launcher to
+it, then solve render, audio and input on top — each of which fails differently
+on this platform.
+
+**Runtime.** `files/ac-gc-h700/libs.armhf/` is a 15-library 32-bit set sourced
+from the stock Anbernic card: SDL 2.0.12, the Mali-G31 userspace blob
+(`libmali.so.0`, ~14 MB), `libstdc++`, `libasound`, `libudev`, the tiny
+EGL/GLESv2 name-shims the blob backs, and the C-runtime deps. The launcher puts
+this dir on `LD_LIBRARY_PATH` (ahead of the port's own empty aarch64 dir), so the
+32-bit loader resolves everything the binary needs.
+
+**Render.** The stock SDL2 was built with only the `mali`/`dummy` video drivers,
+and NextUI has no DRM/KMS, so `SDL_VIDEODRIVER=mali` (fbdev) is forced, with
+`SDL_VIDEO_EGL_DRIVER` / `SDL_VIDEO_GL_DRIVER` pointed at the bundled 32-bit
+`libEGL.so` / `libGLESv2.so` by absolute path (robust against LD search order).
+The game then binds a **native Mali-G31 OpenGL ES 3.2** context at 720×480 — no
+GL4ES down-conversion is involved (unlike the gothic ports in F37).
+
+**Audio.** The porter sets `SDL_AUDIODRIVER=pipewire,alsa,dsp`. SDL 2.0.12
+predates comma-list driver parsing (2.24+) and NextUI has no PipeWire, so
+`SDL_Init(SDL_INIT_AUDIO)` aborted on the unparseable value. Forcing plain
+`SDL_AUDIODRIVER=alsa` gives sound from the loading screen on.
+
+**Input — the hard part.** On NextUI the port's stock 32-bit SDL 2.0.12 delivers
+**zero** joystick or controller events to the game: the native-controller path is
+dead, `gptokeyb`'s uinput keyboard never reaches the game, and even the
+`gt-input-remap` shim's own SDL-layer synthesis (F26/F31) sees nothing to work
+from. AC drives movement and actions by polling `SDL_GetKeyboardState` by
+scancode every frame. The one input source that *does* reach the game is the
+shim's **evdev thread** — the same `/dev/input`-reading thread that already made
+the Menu/HUD toggle work, which bypasses SDL entirely. F45 extends that thread
+(behind a per-port `GT_EVDEV_KEYS=1`) to read the gamepad's evdev codes directly
+and synthesize the keys `SDL_GetKeyboardState` returns. The codes map through the
+same `gt_remap` table and the port's gptk as every other remapped port, so the
+layout matches the rest of the pak. AC's `keybindings.ini` binds the four faces,
+L/R, Start and a Z key plus WASD (main stick) and arrows (camera); the D-pad
+drives WASD and L2/R2 rotate the camera. Because the RG SP is Nintendo-labelled
+but the pak runs an Xbox-positional layout, the four face buttons carry a
+**Nintendo↔Xbox cross-swap** in `animalcrossing.gptk` (gptk `a`→game B, `b`→A,
+`x`→Y, `y`→X) — device-confirmed after A/B and X/Y felt swapped under the straight
+mapping.
+
+**HUD.** The in-game overlay (F34/F35) needs no AC-specific work: the pak sets
+`GT_HUD=1` for every port and the shim's HUD draws over the game's GL present
+path; it toggles and renders correctly here.
+
+**Packaging.** Everything beyond the porter's own files is **pak-hosted** and
+referenced by absolute `$PAK_DIR` paths — the runtime and gptk under
+`files/ac-gc-h700/`, the 32-bit shim as `lib/gt-input-remap.armhf.so` (the same
+`gt-input-remap.c` source, built in an armhf container; see `make shim`). So the
+harbourmaster install itself is never modified — only `save/` and `conf/` are
+written there, and reinstalling the port from PortMaster does not have to be
+undone. The one file that must change is the port's launcher, and
+`copy_game_scripts` reverts it to the pristine porter source (wrong
+`controlfolder` fallback, none of the runtime wiring) after every
+PortMaster-GUI session. `run_port`'s `gt-h700-ac-launcher` hook re-installs the
+pak launcher over `ROM_PATH` each launch — cmp-guarded (an unchanged launcher is
+never rewritten), detected by the `AnimalCrossing` binary in the resolved
+`GAMEDIR` so a user-renamed `.sh` still heals and no other port is ever touched.
+The build fail-closes on the ELF class of both the shim and the Mali blob, so an
+aarch64 artifact can never ship under a 32-bit name.
+
+Device-verified 2026-08-28 on a clean install: boots, plays, native ES 3.2
+render, sound from the loading screen, every control correct (Camille confirmed),
+and the in-game HUD working.

@@ -150,6 +150,33 @@ static int gt_button_slot(const char *name) {
     return -1;
 }
 
+/* F45: evdev key code -> the SDL joystick button INDEX NextUI's SDL2 assigns
+ * it. NextUI's SDL enumerates this device's EV_KEY capability in ascending
+ * code order, the three keyboard-type codes (ESC, VolDown, VolUp) taking
+ * indices 0..2 (see the v1 note at the top of this file). Measured device
+ * order (2026-08-28, evtest on the RG SP ANBERNIC-keys node): codes
+ * 304,305,306,307,308,309,310,311,[312 Menu],314,315. Feeding the result to
+ * gt_remap therefore reproduces the SDL path's button layout EXACTLY, so a
+ * port driven by this evdev path (OpenCrossing — its stock 32-bit SDL yields
+ * no joystick events at all) maps A/B/X/Y identically to every other port.
+ * Returns -1 for codes SDL doesn't expose as a plain gameplay button
+ * (Menu/GOTO/Vol/ESC), which the caller handles separately or ignores. */
+static int gt_evdev_code_sdl_index(int code) {
+    switch (code) {
+        case 304: return 3;   /* BTN_SOUTH  */
+        case 305: return 4;   /* BTN_EAST   */
+        case 306: return 5;   /* BTN_C      */
+        case 307: return 6;   /* BTN_NORTH  */
+        case 308: return 7;   /* BTN_WEST   */
+        case 309: return 8;   /* BTN_Z      */
+        case 310: return 9;   /* BTN_TL     */
+        case 311: return 10;  /* BTN_TR     */
+        case 314: return 12;  /* BTN_SELECT */
+        case 315: return 13;  /* BTN_START  */
+        default:  return -1;  /* 312 Menu / 354 GOTO / 1 ESC / 114-115 Vol */
+    }
+}
+
 /* hat direction slots: 0=up 1=down 2=left 3=right (SDL_HAT_* bit order is
  * UP=1 RIGHT=2 DOWN=4 LEFT=8 — mapped in gt_hat_bit_slot). */
 static int gt_dir_slot(const char *name) {
@@ -224,6 +251,24 @@ static int gt_hat_edges(int prev, int cur, int *out_slot, int *out_pressed) {
             out_slot[n] = gt_hat_bit_slot(bits[i]); out_pressed[n] = 1; n++;
         }
     }
+    return n;
+}
+
+/* F45: evdev D-pad edge computation. This device reports the D-pad as two
+ * absolute axes (ABS_HAT0X/ABS_HAT0Y) valued -1/0/+1, not as the SDL hat
+ * bitmask gt_hat_edges handles. Given one axis's previous and current value
+ * and the direction slots for its negative/positive ends, list the
+ * (slot, pressed) transitions — release before press, so passing straight
+ * through center (e.g. -1 -> +1) never holds both ends at once. Returns 0..2;
+ * out_slot/out_pressed must hold 2 entries. */
+static int gt_evdev_hat_edges(int prev, int cur, int slot_neg, int slot_pos,
+                              int *out_slot, int *out_pressed) {
+    int n = 0;
+    if (prev == cur) return 0;
+    if (prev < 0)      { out_slot[n] = slot_neg; out_pressed[n] = 0; n++; }
+    else if (prev > 0) { out_slot[n] = slot_pos; out_pressed[n] = 0; n++; }
+    if (cur < 0)       { out_slot[n] = slot_neg; out_pressed[n] = 1; n++; }
+    else if (cur > 0)  { out_slot[n] = slot_pos; out_pressed[n] = 1; n++; }
     return n;
 }
 
@@ -833,6 +878,38 @@ int main(void) {
       gt_menu_toggle(&s,&vis,gt_is_menu_button(11),0);   /* 11 up   */
       if (vis != 0) return fail("Menu+Vol combo must not flip"); }
 
+    /* F45: evdev gameplay path — code -> SDL index -> gt_remap slot must equal
+     * the SDL path's mapping, so AC maps its buttons identically to every port
+     * (device-measured codes, 2026-08-28). */
+    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(304)) != 1)  return fail("evdev 304 -> A slot 1");
+    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(305)) != 0)  return fail("evdev 305 -> B slot 0");
+    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(306)) != 2)  return fail("evdev 306 -> Y slot 2");
+    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(307)) != 3)  return fail("evdev 307 -> X slot 3");
+    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(308)) != 4)  return fail("evdev 308 -> L1 slot 4");
+    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(309)) != 5)  return fail("evdev 309 -> R1 slot 5");
+    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(310)) != 6)  return fail("evdev 310 -> Select slot 6");
+    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(311)) != 7)  return fail("evdev 311 -> Start slot 7");
+    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(314)) != 10) return fail("evdev 314 -> L2 slot 10");
+    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(315)) != 11) return fail("evdev 315 -> R2 slot 11");
+    if (gt_evdev_code_sdl_index(312) != -1) return fail("evdev 312 (Menu) is not a gameplay button");
+    if (gt_evdev_code_sdl_index(354) != -1) return fail("evdev 354 (GOTO) is not a gameplay button");
+    if (gt_evdev_code_sdl_index(1)   != -1) return fail("evdev 1 (ESC) is not a gameplay button");
+
+    /* F45: evdev hat edges — release-before-press, center + straight-through */
+    {
+        int es[2], ep[2], en;
+        en = gt_evdev_hat_edges(0, -1, 2, 3, es, ep);   /* center -> left */
+        if (en != 1 || es[0] != 2 || ep[0] != 1) return fail("evdev hat 0->left");
+        en = gt_evdev_hat_edges(-1, 1, 2, 3, es, ep);   /* left -> right (through center) */
+        if (en != 2 || ep[0] != 0 || es[0] != 2 || ep[1] != 1 || es[1] != 3) return fail("evdev hat left->right");
+        en = gt_evdev_hat_edges(1, 0, 2, 3, es, ep);    /* right -> center */
+        if (en != 1 || es[0] != 3 || ep[0] != 0) return fail("evdev hat right->center");
+        en = gt_evdev_hat_edges(-1, -1, 0, 1, es, ep);  /* no change */
+        if (en != 0) return fail("evdev hat no-change");
+        en = gt_evdev_hat_edges(0, 1, 0, 1, es, ep);    /* center -> down (Y axis) */
+        if (en != 1 || es[0] != 1 || ep[0] != 1) return fail("evdev hat 0->down");
+    }
+
     puts("remap ok");
     return 0;
 }
@@ -875,6 +952,9 @@ static int gt_flag(const char *name) {
 static int gt_remap_on(void)  { static int v = -1; if (v < 0) v = gt_flag("GT_INPUT_REMAP"); return v; }
 static int gt_hud_on(void)    { static int v = -1; if (v < 0) v = gt_flag("GT_HUD"); return v; }
 static int gt_hud_debug(void) { static int v = -1; if (v < 0) v = gt_flag("GT_HUD_DEBUG"); return v; }
+/* F45: opt-in evdev->key synthesis (only OpenCrossing sets it; see the evdev
+ * thread). Kept separate from GT_HUD so a port can use one without the other. */
+static int gt_evdev_keys_on(void) { static int v = -1; if (v < 0) v = gt_flag("GT_EVDEV_KEYS"); return v; }
 
 /* HUD visibility. Written ONLY by the evdev toggle thread (Task 3); read by
  * the GL and software draw paths. volatile so the reader never caches it in a
@@ -888,6 +968,12 @@ static volatile int gt_hud_visible;
  * button. gt_tap is owned solely by this thread (the SDL path no longer
  * toggles — Decision A). */
 static gt_tap_state gt_tap;
+
+/* The gptk keymap and the synthetic keystate array. Declared here — ahead of
+ * the evdev thread, which for F45 also maps gamepad codes into gt_synth_keys —
+ * though most writers/readers are the SDL-path interposers further below. */
+static gt_keymap gt_map;
+static unsigned char gt_synth_keys[GT_NUM_SCANCODES];
 
 #define GT_EVBIT_TEST(arr, b) (((arr)[(b) / 8] >> ((b) % 8)) & 1u)
 
@@ -925,11 +1011,13 @@ static int gt_open_menu_device(void) {
 
 static void *gt_evdev_thread(void *arg) {
     (void)arg;
-    int fd = gt_open_menu_device();
+    int fd = gt_open_menu_device();   /* event1 also carries the gamepad codes */
     if (fd < 0) {
         if (gt_hud_debug()) fprintf(stderr, "gt-hud: no evdev Menu device -> toggle disabled\n");
         return NULL;
     }
+    const int keys_on = gt_evdev_keys_on() && gt_map.loaded;  /* F45 gameplay synth */
+    int hat_x = 0, hat_y = 0;                                 /* D-pad axis edge state */
     for (;;) {
         struct input_event ev;
         ssize_t n = read(fd, &ev, sizeof ev);
@@ -937,17 +1025,53 @@ static void *gt_evdev_thread(void *arg) {
             if (n < 0 && errno == EINTR) continue;
             break;   /* device gone / error -> exit thread (benign) */
         }
-        if (ev.type != EV_KEY || ev.value == 2) continue;   /* skip autorepeat */
-        int down = (ev.value == 1);
-        int cls  = gt_evkey_class(ev.code);
-        if (cls == GT_EVK_MENU)
-            gt_menu_toggle(&gt_tap, &gt_hud_visible, 1, down);
-        else if (cls == GT_EVK_VOL)
-            gt_menu_toggle(&gt_tap, &gt_hud_visible, 0, down);
-        else
-            continue;
-        if (gt_hud_debug() && cls == GT_EVK_MENU && !down)
-            fprintf(stderr, "gt-input-remap: HUD toggle -> %s\n", gt_hud_visible ? "on" : "off");
+        if (ev.type == EV_KEY) {
+            if (ev.value == 2) continue;   /* skip autorepeat */
+            int down = (ev.value == 1);
+            int cls  = gt_evkey_class(ev.code);
+            if (cls == GT_EVK_MENU) {
+                gt_menu_toggle(&gt_tap, &gt_hud_visible, 1, down);
+                if (gt_hud_debug() && !down)
+                    fprintf(stderr, "gt-input-remap: HUD toggle -> %s\n",
+                            gt_hud_visible ? "on" : "off");
+            } else if (cls == GT_EVK_VOL) {
+                gt_menu_toggle(&gt_tap, &gt_hud_visible, 0, down);
+            } else if (keys_on) {
+                /* F45: gameplay button -> synthesized keystate. For ports whose
+                 * SDL delivers no joystick events (OpenCrossing's stock 32-bit
+                 * SDL 2.0.12), the v1/v2/v3 SDL paths never fire; drive the same
+                 * gptk map straight from evdev instead. gt_evdev_code_sdl_index
+                 * -> gt_remap reuses the SDL path's exact button layout. */
+                int idx = gt_evdev_code_sdl_index(ev.code);
+                if (idx >= 0) {
+                    int slot = gt_remap((unsigned char)idx);
+                    if (slot >= 0 && slot < 16) {
+                        gt_key k = gt_map.button_key[slot];
+                        if (k.sym) {
+                            gt_synth_set(gt_synth_keys, k.scancode, down);
+                            if (gt_debug())
+                                fprintf(stderr, "gt-input-remap: evdev btn %d -> slot %d key 0x%x (%s)\n",
+                                        (int)ev.code, slot, (unsigned)k.sym, down ? "down" : "up");
+                        }
+                    }
+                }
+            }
+        } else if (ev.type == EV_ABS && keys_on) {
+            /* F45: D-pad hat (ABS_HAT0X/Y, -1/0/+1) -> direction keys. */
+            int slots[2], pressed[2], m = 0, i;
+            if (ev.code == ABS_HAT0X)      { m = gt_evdev_hat_edges(hat_x, ev.value, 2, 3, slots, pressed); hat_x = ev.value; }
+            else if (ev.code == ABS_HAT0Y) { m = gt_evdev_hat_edges(hat_y, ev.value, 0, 1, slots, pressed); hat_y = ev.value; }
+            for (i = 0; i < m; i++) {
+                gt_key k = gt_map.dir_key[slots[i]];
+                if (k.sym) {
+                    gt_synth_set(gt_synth_keys, k.scancode, pressed[i]);
+                    if (gt_debug())
+                        fprintf(stderr, "gt-input-remap: evdev hat %d=%d -> dir %d key 0x%x (%s)\n",
+                                (int)ev.code, (int)ev.value, slots[i], (unsigned)k.sym,
+                                pressed[i] ? "down" : "up");
+                }
+            }
+        }
     }
     close(fd);
     return NULL;
@@ -966,16 +1090,15 @@ static void gt_evdev_start_once(void) {
         fprintf(stderr, "gt-hud: evdev thread start failed -> toggle disabled\n");
 }
 static void gt_evdev_ensure(void) {
-    if (gt_hud_on())
+    if (gt_hud_on() || gt_evdev_keys_on())
         pthread_once(&gt_evdev_once, gt_evdev_start_once);
 }
 
-/* v2 state: the gptk keymap (loaded once at init) and the pending-event
- * stash (a single hat transition can yield up to 4 key events; the first
- * replaces the hat event, the rest are served on subsequent polls before
- * SDL is consulted). Single-threaded event pumping is assumed, as
- * elsewhere in this shim. */
-static gt_keymap gt_map;
+/* v2 state: the pending-event stash (a single hat transition can yield up to
+ * 4 key events; the first replaces the hat event, the rest are served on
+ * subsequent polls before SDL is consulted). Single-threaded event pumping is
+ * assumed, as elsewhere in this shim. gt_map is declared earlier now (the F45
+ * evdev thread also reads it). */
 static SDL_Event gt_stash[8];
 static int gt_stash_n;
 static int gt_hat_prev;
@@ -984,8 +1107,8 @@ static int gt_hat_prev;
  * synthesized) and the merged buffer handed to the app. gt_ks_active flips on
  * once the app calls SDL_GetKeyboardState — after that every event poll
  * refreshes the merged buffer, because SDL apps (LÖVE among them) grab the
- * state pointer ONCE and then just index it every frame. */
-static unsigned char gt_synth_keys[GT_NUM_SCANCODES];
+ * state pointer ONCE and then just index it every frame. gt_synth_keys is
+ * declared earlier now (the F45 evdev thread also writes it). */
 static Uint8 gt_merged_keys[GT_NUM_SCANCODES];
 static int gt_ks_numkeys;
 static int gt_ks_active;
