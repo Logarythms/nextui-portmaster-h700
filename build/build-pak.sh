@@ -1321,6 +1321,17 @@ PMEOF
   cp "$tmp/usr/lib/aarch64-linux-gnu/libmodplug.so.1.0.0" \
      "$assembled/files/port-fixes/tunics_pm/libs.aarch64/libmodplug.so.1"
 
+  # gt-h700-sonic-gptk: F43 — RSDK Sonic ports read SDL_GameController (which
+  # is correctly recognized on h700) but controls stay dead — an
+  # RSDK-internal defect this pak can't fix natively. Fall back to the pak's
+  # keyboard-synthesis path (same F27 overlay mechanism): ship a corrected
+  # sonic.gptk mapping the gamepad to RSDK's [Keyboard 1] scancodes, read by
+  # gt-input-remap.so once Sonic 1.sh/Sonic 2.sh are on the remap list.
+  mkdir -p "$assembled/files/port-fixes/sonic1"
+  cp "$ASSETS/port-fixes/sonic1/sonic.gptk" "$assembled/files/port-fixes/sonic1/sonic.gptk"
+  mkdir -p "$assembled/files/port-fixes/sonic2"
+  cp "$ASSETS/port-fixes/sonic2/sonic.gptk" "$assembled/files/port-fixes/sonic2/sonic.gptk"
+
   # gt-h700-gmtoolkit: F24 — RHH GameMaker patchscripts hard-require
   # "$controlfolder/gmtoolkit.$DEVICE_ARCH" (see the PM_GMTOOLKIT pin
   # comment). Fetched pinned, license shipped alongside, fail-closed.

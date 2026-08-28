@@ -15,3 +15,7 @@ BYTEPATH.sh
 Lasagna Boy Classic.sh
 Road Invaders.sh
 The Starlit Escape.sh
+# v0.3.2: RSDK Sonic ports — native SDL_GameController unrecognized on h700
+# (see F43); keyboard-synthesis via gt-input-remap + overlaid sonic.gptk.
+Sonic 1.sh
+Sonic 2.sh
