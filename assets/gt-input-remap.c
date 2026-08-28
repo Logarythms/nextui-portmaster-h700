@@ -1774,6 +1774,20 @@ static int          (*p_SDL_RenderCopy)(SDL_Renderer*, SDL_Texture*, const SDL_R
 static int          (*p_SDL_SetTextureBlendMode)(SDL_Texture*, SDL_BlendMode);
 static int          (*p_SDL_GetRendererOutputSize)(SDL_Renderer*, int*, int*);
 
+/* F44: renderer geometry accessors. RSDK-class ports drive the renderer through
+ * SDL_RenderSetLogicalSize, which remaps RenderCopy into the game's small logical
+ * space — so the HUD's physical top-right rect lands off-screen. We snapshot and
+ * reset these to draw in physical output pixels, then restore the port's state. */
+static void      (*p_SDL_RenderGetLogicalSize)(SDL_Renderer*, int*, int*);
+static int       (*p_SDL_RenderSetLogicalSize)(SDL_Renderer*, int, int);
+static void      (*p_SDL_RenderGetScale)(SDL_Renderer*, float*, float*);
+static int       (*p_SDL_RenderSetScale)(SDL_Renderer*, float, float);
+static void      (*p_SDL_RenderGetViewport)(SDL_Renderer*, SDL_Rect*);
+static int       (*p_SDL_RenderSetViewport)(SDL_Renderer*, const SDL_Rect*);
+static void      (*p_SDL_RenderGetClipRect)(SDL_Renderer*, SDL_Rect*);
+static int       (*p_SDL_RenderSetClipRect)(SDL_Renderer*, const SDL_Rect*);
+static SDL_bool  (*p_SDL_RenderIsClipEnabled)(SDL_Renderer*);
+
 static int gt_sw_resolve(void) {
     static int done;
     if (done) return !gt_sw_dead;
@@ -1784,8 +1798,21 @@ static int gt_sw_resolve(void) {
     p_SDL_RenderCopy           = (int (*)(SDL_Renderer*,SDL_Texture*,const SDL_Rect*,const SDL_Rect*))dlsym(RTLD_NEXT, "SDL_RenderCopy");
     p_SDL_SetTextureBlendMode  = (int (*)(SDL_Texture*,SDL_BlendMode))dlsym(RTLD_NEXT, "SDL_SetTextureBlendMode");
     p_SDL_GetRendererOutputSize= (int (*)(SDL_Renderer*,int*,int*))dlsym(RTLD_NEXT, "SDL_GetRendererOutputSize");
+    p_SDL_RenderGetLogicalSize = (void (*)(SDL_Renderer*,int*,int*))dlsym(RTLD_NEXT, "SDL_RenderGetLogicalSize");
+    p_SDL_RenderSetLogicalSize = (int (*)(SDL_Renderer*,int,int))dlsym(RTLD_NEXT, "SDL_RenderSetLogicalSize");
+    p_SDL_RenderGetScale       = (void (*)(SDL_Renderer*,float*,float*))dlsym(RTLD_NEXT, "SDL_RenderGetScale");
+    p_SDL_RenderSetScale       = (int (*)(SDL_Renderer*,float,float))dlsym(RTLD_NEXT, "SDL_RenderSetScale");
+    p_SDL_RenderGetViewport    = (void (*)(SDL_Renderer*,SDL_Rect*))dlsym(RTLD_NEXT, "SDL_RenderGetViewport");
+    p_SDL_RenderSetViewport    = (int (*)(SDL_Renderer*,const SDL_Rect*))dlsym(RTLD_NEXT, "SDL_RenderSetViewport");
+    p_SDL_RenderGetClipRect    = (void (*)(SDL_Renderer*,SDL_Rect*))dlsym(RTLD_NEXT, "SDL_RenderGetClipRect");
+    p_SDL_RenderSetClipRect    = (int (*)(SDL_Renderer*,const SDL_Rect*))dlsym(RTLD_NEXT, "SDL_RenderSetClipRect");
+    p_SDL_RenderIsClipEnabled  = (SDL_bool (*)(SDL_Renderer*))dlsym(RTLD_NEXT, "SDL_RenderIsClipEnabled");
     if (!p_SDL_CreateTexture || !p_SDL_DestroyTexture || !p_SDL_UpdateTexture ||
-        !p_SDL_RenderCopy || !p_SDL_SetTextureBlendMode || !p_SDL_GetRendererOutputSize) {
+        !p_SDL_RenderCopy || !p_SDL_SetTextureBlendMode || !p_SDL_GetRendererOutputSize ||
+        !p_SDL_RenderGetLogicalSize || !p_SDL_RenderSetLogicalSize ||
+        !p_SDL_RenderGetScale || !p_SDL_RenderSetScale ||
+        !p_SDL_RenderGetViewport || !p_SDL_RenderSetViewport ||
+        !p_SDL_RenderGetClipRect || !p_SDL_RenderSetClipRect || !p_SDL_RenderIsClipEnabled) {
         gt_sw_dead = 1;
         if (gt_hud_debug()) fprintf(stderr, "gt-hud: SDL_Render symbol(s) missing -> SW HUD disabled\n");
         return 0;
@@ -1823,7 +1850,32 @@ static void gt_hud_draw_sw(SDL_Renderer *r) {
     int px = 0, py = 0;
     gt_hud_rect(ow, oh, gt_tex_w, gt_tex_h, &px, &py);
     SDL_Rect dst = { px, py, gt_tex_w, gt_tex_h };
+
+    /* F44: RSDK-class ports drive the renderer through SDL_RenderSetLogicalSize,
+     * so RenderCopy is remapped into the game's small logical space and our
+     * physical top-right rect lands off-screen. Snapshot the port's geometry,
+     * drop to physical 1:1 for our own copy, then restore it exactly (the same
+     * exhaustive save/restore the GL path uses). A port that sets none of these
+     * has identity state, so this is a no-op there. */
+    int save_lw = 0, save_lh = 0; p_SDL_RenderGetLogicalSize(r, &save_lw, &save_lh);
+    float save_sx = 1.0f, save_sy = 1.0f; p_SDL_RenderGetScale(r, &save_sx, &save_sy);
+    SDL_Rect save_vp = { 0, 0, 0, 0 }; p_SDL_RenderGetViewport(r, &save_vp);
+    SDL_bool save_clip_on = p_SDL_RenderIsClipEnabled(r);
+    SDL_Rect save_clip = { 0, 0, 0, 0 }; p_SDL_RenderGetClipRect(r, &save_clip);
+
+    p_SDL_RenderSetLogicalSize(r, 0, 0);   /* clear logical scaling; ... */
+    p_SDL_RenderSetScale(r, 1.0f, 1.0f);   /* ... reset scale/viewport explicitly to physical 1:1 */
+    p_SDL_RenderSetViewport(r, NULL);      /* (older SDL's SetLogicalSize(0,0) left these set) */
+    p_SDL_RenderSetClipRect(r, NULL);      /* no clip */
+
     p_SDL_RenderCopy(r, tex, NULL, &dst);
+
+    p_SDL_RenderSetLogicalSize(r, save_lw, save_lh);   /* logical>0: regenerates the exact scale+viewport */
+    if (!(save_lw > 0 && save_lh > 0)) {               /* non-logical: restore any manual scale/viewport */
+        p_SDL_RenderSetScale(r, save_sx, save_sy);
+        p_SDL_RenderSetViewport(r, &save_vp);
+    }
+    p_SDL_RenderSetClipRect(r, save_clip_on ? &save_clip : NULL);
 }
 
 void SDL_RenderPresent(SDL_Renderer *r) {
