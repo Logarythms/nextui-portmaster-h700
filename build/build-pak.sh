@@ -1079,6 +1079,27 @@ do_portmaster() {
   gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libfontconfig.so.1.12.0" "$PM_FONTCONFIG_SO_SHA256"
   gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libuuid.so.1.3.0" "$PM_UUID_SO_SHA256"
 
+  # gt-h700-libsndfile: F40 — the RSDK Sonic ports (sonic2013/sonicforever/
+  # sonic2absolute) link libsndfile.so.1, absent everywhere on h700, so the
+  # loader aborts before main() and the ports exit instantly. Stage it plus the
+  # two sonames its DT_NEEDED closure adds that aren't already shipped —
+  # libvorbisenc.so.2 and libopus.so.0 (libFLAC/libvorbis/libogg are F9/F10/F20).
+  # Same fail-closed extract as F9/F10, with the F10 mandatory extracted-hash
+  # check. All three members verified via `tar -tJ` under ./usr/lib/aarch64-linux-gnu/.
+  fetch "$PM_SNDFILE_DEB_URL" "$PM_SNDFILE_DEB_SHA256" "$tmp/sndfile.deb"
+  fetch "$PM_VORBISENC_DEB_URL" "$PM_VORBISENC_DEB_SHA256" "$tmp/vorbisenc.deb"
+  fetch "$PM_OPUS_DEB_URL" "$PM_OPUS_DEB_SHA256" "$tmp/opus.deb"
+  ar p "$tmp/sndfile.deb" data.tar.xz | tar -xJ -C "$tmp" ./usr/lib/aarch64-linux-gnu/libsndfile.so.1.0.31
+  ar p "$tmp/vorbisenc.deb" data.tar.xz | tar -xJ -C "$tmp" ./usr/lib/aarch64-linux-gnu/libvorbisenc.so.2.0.12
+  ar p "$tmp/opus.deb" data.tar.xz | tar -xJ -C "$tmp" ./usr/lib/aarch64-linux-gnu/libopus.so.0.8.0
+  for gt_snd_f in libsndfile.so.1.0.31 libvorbisenc.so.2.0.12 libopus.so.0.8.0; do
+    file "$tmp/usr/lib/aarch64-linux-gnu/$gt_snd_f" | grep -q 'shared object.*aarch64' \
+      || { echo "extracted $gt_snd_f is not an aarch64 shared object" >&2; exit 1; }
+  done
+  gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libsndfile.so.1.0.31" "$PM_SNDFILE_SO_SHA256"
+  gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libvorbisenc.so.2.0.12" "$PM_VORBISENC_SO_SHA256"
+  gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libopus.so.0.8.0" "$PM_OPUS_SO_SHA256"
+
   assembled="$tmp/PORTS.pak"
   mkdir -p "$assembled"
   unzip -q "$tmp/ports-pak.zip" -d "$assembled"
@@ -1201,6 +1222,14 @@ PMEOF
 
   # gt-h700-libogg: F20 — SONAME-named real file, same vfat-no-symlinks rule.
   cp "$tmp/usr/lib/aarch64-linux-gnu/libogg.so.0.8.4" "$assembled/lib/libogg.so.0"
+
+  # gt-h700-libsndfile: F40 — the RSDK Sonic ports' audio chain. SONAME-named
+  # real files (same vfat-no-symlinks rule); libsndfile NEEDs both of the other
+  # two, and the pak lib/ is on every port's LD_LIBRARY_PATH, so this fixes
+  # Sonic 1 and Sonic 2 with no per-port change.
+  cp "$tmp/usr/lib/aarch64-linux-gnu/libsndfile.so.1.0.31" "$assembled/lib/libsndfile.so.1"
+  cp "$tmp/usr/lib/aarch64-linux-gnu/libvorbisenc.so.2.0.12" "$assembled/lib/libvorbisenc.so.2"
+  cp "$tmp/usr/lib/aarch64-linux-gnu/libopus.so.0.8.0" "$assembled/lib/libopus.so.0"
 
   # gt-h700-7zzs: F18 — modern port patchscripts (deltarune, the RHH
   # GameMaker ports) invoke "$controlfolder/7zzs.$DEVICE_ARCH" for archive

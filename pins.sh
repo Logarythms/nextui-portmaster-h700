@@ -150,3 +150,27 @@ PM_FONTCONFIG_SO_SHA256=53748e544be7bc8262359f2cd0696d9184788f1146813fc006649330
 PM_UUID_DEB_URL="http://deb.debian.org/debian/pool/main/u/util-linux/libuuid1_2.36.1-8+deb11u2_arm64.deb"
 PM_UUID_DEB_SHA256=2b3df73a725c3fe4ec8565ec04124e556122370fc63fd7886f7dfa25092df0ba
 PM_UUID_SO_SHA256=7581f2a9879fcd79db160f57889e80c912cad564edcf446bb3d0d06394c57e67
+# fix F40 (2026-08-28), same "h700 lib gap" story: Sonic 1 & Sonic 2 (the
+# Rubberduckycooly RSDK decompilation ports — sonic2013/sonicforever/
+# sonic2absolute) link libsndfile.so.1, which NextUI-h700 ships nowhere (not
+# the port libs/, not .system, not the pak) — the loader aborts before main()
+# and both ports exit instantly (on-device 2026-08-28, log.txt: "error while
+# loading shared libraries: libsndfile.so.1"). An objdump -p of bullseye's
+# libsndfile.so.1.0.31 gives its DT_NEEDED closure: libFLAC.so.8, libvorbis.so.0
+# and libogg.so.0 are ALREADY shipped (F9/F10/F20), leaving two genuinely
+# missing sonames — libvorbisenc.so.2 (from libvorbisenc2, same 1.3.7-1 source
+# as the F10 libvorbis0a/libvorbisfile3 pins) and libopus.so.0 (self-contained:
+# NEEDs only libm/libc). Device-confirmed complete: with all three staged, an
+# LD_TRACE of all four Sonic binaries resolves every soname (zero "not found").
+# Each PM_*_SO_SHA256 is the MANDATORY extracted-file hash (F10 rule); every
+# .deb sha is the .deb's own sha256, double-download cross-checked and matched
+# against Packages on the first try (no debian-security fallback this round).
+PM_SNDFILE_DEB_URL="http://deb.debian.org/debian/pool/main/libs/libsndfile/libsndfile1_1.0.31-2_arm64.deb"
+PM_SNDFILE_DEB_SHA256=35cd1ede25dda91abdfd23bc02fbfe9afc72e2a11178bebcc5ef76601a2a60b7
+PM_SNDFILE_SO_SHA256=c5573870b1c698838bdb8581703e1dc089fcf59a618e8fa2433f97061b4c8583
+PM_VORBISENC_DEB_URL="http://deb.debian.org/debian/pool/main/libv/libvorbis/libvorbisenc2_1.3.7-1_arm64.deb"
+PM_VORBISENC_DEB_SHA256=f1089e220c81e267caec859bf2e440bb78ed9f318bbb51cfd6c85d35bf80144b
+PM_VORBISENC_SO_SHA256=8393e8bb008aa47eb7074a6d06229bbbd5b2d104fcbe186f6a23f6f4955b0123
+PM_OPUS_DEB_URL="http://deb.debian.org/debian/pool/main/o/opus/libopus0_1.3.1-0.1_arm64.deb"
+PM_OPUS_DEB_SHA256=86d96e6e99820be150e4e1d335cf8503c5802a3ac47103ba25eebf77a0699a13
+PM_OPUS_SO_SHA256=e40a7ac1b8dedd51c44c5efe0272a9e26ed9e4d479dcba82b9e07a1890892c70

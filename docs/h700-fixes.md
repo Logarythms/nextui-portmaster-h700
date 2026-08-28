@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F36) below match the internal numbering used while these were
+Fix IDs (F1–F40) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. A closing section records the ports
 that this platform genuinely can't run.
@@ -78,6 +78,21 @@ directory so it never depends on what the host image happens to provide.
   the F10 vorbis libraries reference it too, but LÖVE never faulted
   because its runtime folder bundles its own copy. Fix: ship `libogg0`,
   pinned from bullseye.
+- **F40 — the RSDK Sonic ports (Sonic 1, Sonic 2) exit instantly:
+  `libsndfile.so.1` missing.** Both ports are from the same
+  [Rubberduckycooly](https://github.com/Rubberduckycooly) RSDK decompilation
+  project (`sonic2013`/`sonicforever`/`sonic2absolute`) and link
+  `libsndfile.so.1` for audio decode, which no h700 image, port folder, or
+  earlier pak round provides — so the dynamic loader aborts before `main()`
+  and the game exits the moment it launches (device log: `error while loading
+  shared libraries: libsndfile.so.1`). `libsndfile`'s dependency closure adds
+  two more sonames the pak didn't yet carry — `libvorbisenc.so.2` (from
+  `libvorbisenc2`, the same 1.3.7-1 source as the F10 vorbis libraries) and
+  `libopus.so.0` — while `libFLAC`, `libvorbis` and `libogg` were already
+  shipped by F9/F10/F20. Fix: ship all three, pinned from bullseye. Because
+  the pak's `lib/` is on every port's `LD_LIBRARY_PATH`, this fixes both Sonic
+  ports at once with no per-port change; confirmed on-device by tracing all
+  four Sonic binaries (every soname resolves).
 
 ## Roms launcher trigger file (F2)
 
@@ -718,6 +733,13 @@ the F25/F26/F31 input-remap and gptk-keyboard regression is intact
 above: volume is int32 index 4 (byte offset 16) and brightness is int32
 index 1 (byte offset 4), both on NextUI's 0–20 / 0–10 scales — the pre-gate
 guess was wrong, and the shipped shim now reads 16/4.
+
+### 0.3.2
+
+**Fixes**
+- F40: Sonic 1 & Sonic 2 (RSDK decompilation) now launch — shipped the missing `libsndfile` audio chain
+
+**Upgrading from 0.3.1:** unzip-over (self-healing); no manual steps.
 
 ### 0.3.1
 
