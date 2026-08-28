@@ -713,6 +713,32 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-sonic-audio: F42 — RSDKv4's InitAudioPlayback() calls
+  # SDL_OpenAudioDevice without ever calling SDL_InitSubSystem(SDL_INIT_AUDIO)
+  # first. On h700 the audio subsystem is not up at that point, so the open
+  # fails ("Audio subsystem is not initialized") and the RSDK Sonic ports
+  # (sonic2013/sonicforever/sonic2absolute) run silent. Preload a shim that
+  # interposes SDL_OpenAudioDevice and force-inits SDL_INIT_AUDIO first if
+  # it isn't already up. Auto-gated on the sonic2013 binary the porter ships
+  # so non-Sonic ports are untouched. Same run_port window as the other
+  # preload hooks; order is irrelevant (disjoint interposed symbols, all
+  # prepend LD_PRELOAD).
+  if ! grep -q 'gt-h700-sonic-audio' "$f"; then
+    awk '$0 == "    \"$PAK_DIR/bin/bash\" \"$ROM_PATH\"" {
+      print "    # gt-h700-sonic-audio (F42): RSDKv4 opens the SDL audio device without"
+      print "    # ever initializing SDL_INIT_AUDIO first, so on h700 the open fails and"
+      print "    # the RSDK Sonic ports run silent. Preload the shim that force-inits the"
+      print "    # audio subsystem before the open. Auto-gated on the sonic2013 binary."
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && [ -f \"$GAMEDIR/sonic2013\" ]; then"
+      print "        export LD_PRELOAD=\"$PAK_DIR/lib/gt-sdl-audio-init.so${LD_PRELOAD:+:$LD_PRELOAD}\""
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-source-heal: F29 — harbourmaster recreates its default
   # *.source.json files ONLY on first-run or a config-version migration
   # (harbour.py: the first-run branch writes HM_SOURCE_DEFAULTS;
@@ -1170,6 +1196,10 @@ PMEOF
   # only for gothic-engine machismo ports (auto-gated on libgothic_patches.so;
   # see edit_portmaster_launch).
   cp "$ASSETS/gt-gles3-profile.so" "$assembled/lib/gt-gles3-profile.so"
+
+  # gt-sdl-audio-init: F42 — force SDL audio-subsystem init for the RSDK Sonic
+  # ports (auto-gated on $GAMEDIR/sonic2013; see edit_portmaster_launch).
+  cp "$ASSETS/gt-sdl-audio-init.so" "$assembled/lib/gt-sdl-audio-init.so"
 
   # gt-h700-port-remap: F25 — pak-shipped default list of ports that get the
   # shim preloaded at launch (read by the run_port hook that
