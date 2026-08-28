@@ -311,6 +311,31 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-sonic-resolution: F41 — the RSDK Sonic ports set ScreenWidth
+  # LOW=214 (0.89:1) for a 3:2 display, which renders a narrow vertical strip
+  # with huge side bars on the h700's 720x480. 360 = 240*720/480 fills it. We
+  # rewrite the launcher's LOW value before run_port execs it, INSIDE the F32
+  # mtime window (snapshot just above) so the edit doesn't retrigger a rebuild.
+  # copy_game_scripts reverts the launcher to pristine 214 each PortMaster
+  # session -> this self-heals; the sed is a no-op once it already reads 360.
+  if ! grep -q 'gt-h700-sonic-resolution' "$f"; then
+    awk '
+    $0 == "    touch -r \"$ROM_PATH\" \"$gt_launcher_mtime_ref\"" {
+      print
+      print ""
+      print "    # gt-h700-sonic-resolution: F41 — fill the 720x480 screen (see docs)"
+      print "    case \"${ROM_PATH##*/}\" in"
+      print "    \"Sonic 1.sh\"|\"Sonic 2.sh\")"
+      print "        if [ \"$PLATFORM\" = \"h700\" ]; then"
+      print "            sed -i \"s/LOW=214/LOW=360/\" \"$ROM_PATH\" 2>/dev/null || true"
+      print "        fi"
+      print "        ;;"
+      print "    esac"
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-presenter-kill: F15 — every in-pak kill of the presenter via the
   # upstream killall silently no-ops: create_busybox_wrappers + the pak PATH
   # shadow it with the pinned bullseye busybox, whose killall never matches

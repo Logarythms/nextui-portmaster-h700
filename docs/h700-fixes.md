@@ -93,6 +93,10 @@ directory so it never depends on what the host image happens to provide.
   the pak's `lib/` is on every port's `LD_LIBRARY_PATH`, this fixes both Sonic
   ports at once with no per-port change; confirmed on-device by tracing all
   four Sonic binaries (every soname resolves).
+- **F41 — the RSDK Sonic ports render as a narrow vertical strip.** The port
+  launcher hardcodes `ScreenWidth` `LOW=214` (0.89:1) for a 3:2 display; on the
+  h700 720×480 that leaves huge side bars. `run_port` rewrites `LOW=214`→`LOW=360`
+  (240×720/480, fills the screen), mtime-neutrally inside the F32 window.
 
 ## Roms launcher trigger file (F2)
 
