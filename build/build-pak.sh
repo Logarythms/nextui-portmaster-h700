@@ -716,19 +716,19 @@ edit_portmaster_launch() { # $1=launch.sh path
   # gt-h700-sonic-audio: F42 — RSDKv4's InitAudioPlayback() calls
   # SDL_OpenAudioDevice without ever calling SDL_InitSubSystem(SDL_INIT_AUDIO)
   # first. On h700 the audio subsystem is not up at that point, so the open
-  # fails ("Audio subsystem is not initialized") and the RSDK Sonic ports
-  # (sonic2013/sonicforever/sonic2absolute) run silent. Preload a shim that
-  # interposes SDL_OpenAudioDevice and force-inits SDL_INIT_AUDIO first if
-  # it isn't already up. Auto-gated on the sonic2013 binary the porter ships
-  # so non-Sonic ports are untouched. Same run_port window as the other
-  # preload hooks; order is irrelevant (disjoint interposed symbols, all
-  # prepend LD_PRELOAD).
+  # fails ("Audio subsystem is not initialized") and the port runs silent.
+  # Preload a shim that interposes SDL_OpenAudioDevice and force-inits
+  # SDL_INIT_AUDIO first if it isn't already up. Auto-gated on the sonic2013
+  # binary (Sonic 1) so non-Sonic ports are untouched; sonicforever /
+  # sonic2absolute (F40) are not covered by this gate. Same run_port window
+  # as the other preload hooks; order is irrelevant (disjoint interposed
+  # symbols, all prepend LD_PRELOAD).
   if ! grep -q 'gt-h700-sonic-audio' "$f"; then
     awk '$0 == "    \"$PAK_DIR/bin/bash\" \"$ROM_PATH\"" {
       print "    # gt-h700-sonic-audio (F42): RSDKv4 opens the SDL audio device without"
       print "    # ever initializing SDL_INIT_AUDIO first, so on h700 the open fails and"
-      print "    # the RSDK Sonic ports run silent. Preload the shim that force-inits the"
-      print "    # audio subsystem before the open. Auto-gated on the sonic2013 binary."
+      print "    # the port runs silent. Preload the shim that force-inits the audio"
+      print "    # subsystem before the open. Auto-gated on the sonic2013 binary."
       print "    if [ \"$PLATFORM\" = \"h700\" ] && [ -f \"$GAMEDIR/sonic2013\" ]; then"
       print "        export LD_PRELOAD=\"$PAK_DIR/lib/gt-sdl-audio-init.so${LD_PRELOAD:+:$LD_PRELOAD}\""
       print "    fi"

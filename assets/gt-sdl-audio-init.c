@@ -4,7 +4,6 @@
  * initialized") and the game runs silent. We force-init the audio subsystem
  * on the first open. Preloaded only for the RSDK Sonic ports (build-pak.sh
  * gate on $GAMEDIR/sonic2013). Harmless if audio is already inited. */
-#include <stdint.h>
 
 #define GT_SDL_INIT_AUDIO 0x00000010u
 
@@ -20,10 +19,11 @@ int main(int argc, char **argv) {
     return 0;
 }
 #else
-#define _GNU_SOURCE
+#define _GNU_SOURCE  /* must precede the first libc include: dlfcn.h's RTLD_NEXT */
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 static int gt_debug(void) { const char *e = getenv("GT_SDL_AUDIO_DEBUG"); return e && *e == '1'; }
 
