@@ -47,6 +47,7 @@ Unzip the new `PORTS.pak.zip` over the SD card the same way you installed it, re
 Confirmed working out of the box on the RG SP:
 
 - [2048 Plus](https://portmaster.games/detail.html?name=2048plus) (the *Plus* version — **not** the regular 2048)
+- [Animal Crossing](https://github.com/Logarythms/nextui-portmaster-h700/wiki/Installing-Animal-Crossing) (a 32-bit-only port — the pak bundles its runtime automatically; the link has the install steps)
 - [Apotris](https://portmaster.games/detail.html?name=apotris)
 - [Balatro](https://portmaster.games/detail.html?name=balatro)
 - [BYTEPATH](https://portmaster.games/detail.html?name=bytepath) (via the built-in input translator — automatic)
@@ -58,6 +59,8 @@ Confirmed working out of the box on the RG SP:
 - [Mina the Hollower](https://portmaster.games/detail.html?name=mina) (its Metal→GLES engine is switched to native OpenGL ES 3 automatically — see below)
 - [Pizza Tower](https://portmaster.games/detail.html?name=pizzatower) (its FMOD sound is fixed automatically — see below)
 - [Road Invaders](https://portmaster.games/detail.html?name=road.invaders) (via the built-in input translator — automatic)
+- [Sonic 1](https://portmaster.games/detail.html?name=sonic.1) (its controls, screen fit and sound are corrected for the RG SP automatically)
+- [Sonic 2](https://portmaster.games/detail.html?name=sonic.2) (its controls, screen fit and sound are corrected for the RG SP automatically)
 - [The Starlit Escape](https://portmaster.games/detail.html?name=thestarlitescape) (via the built-in input translator — automatic)
 - [Tunics!](https://portmaster.games/detail.html?name=tunics_pm) (via the built-in input translator — automatic)
 - [UFO 50](https://github.com/JeodC/RHH-Ports/tree/main/ports/released/gamemakerengine/ufo50) (an [RHH port](https://github.com/JeodC/RHH-Ports); first launch patches for ~1.5 hours)
@@ -94,7 +97,7 @@ Some ports (like Mina the Hollower) run a Mac engine that renders through a Meta
 
 A few ports read the raw joystick directly and keep their own button and screen-size choices in a config file that was tuned for other hardware. Cave Story (Evo) is one: on the RG SP its d-pad did nothing, its face buttons were scrambled, and the picture overran the bottom of the screen. The pak installs an RG SP-correct control-and-resolution config for it on first launch — and only the first launch, so any rebinding or resolution change you make in-game afterward is kept. Nothing to turn on.
 
-A very small number of ports are built only for older 32-bit handhelds and don't ship anything the RG SP can run. Animal Crossing (the GameCube decompilation) is one: nothing happened when you launched it. The pak bundles a complete 32-bit graphics-and-sound runtime for it and wires the game up to that automatically, so it now boots, plays with full picture and sound, uses the standard button layout, and shows the on-screen overlay. Install it from PortMaster as usual; nothing to turn on, and your saves are left alone.
+A very small number of ports are built only for older 32-bit handhelds and don't ship anything the RG SP can run. Animal Crossing (the GameCube decompilation) is one: nothing happened when you launched it. The pak bundles a complete 32-bit graphics-and-sound runtime for it and wires the game up to that automatically, so it now boots, plays with full picture and sound, uses the standard button layout, and shows the on-screen overlay. It isn't on PortMaster and installs a little differently on the RG SP — see the [Animal Crossing install guide](https://github.com/Logarythms/nextui-portmaster-h700/wiki/Installing-Animal-Crossing). Nothing to turn on, and your saves are left alone.
 
 Full details: [`docs/h700-fixes.md`](docs/h700-fixes.md).
 
