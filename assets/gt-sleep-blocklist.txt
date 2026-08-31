@@ -1,0 +1,4 @@
+# gt-sleep-blocklist.txt — F47: launcher filenames (one per line, exact match
+# against $ROM_NAME) for which the sleep watcher + ALSA suspend-proxy are
+# DISABLED. Users can extend on-device without a rebuild via
+# $USERDATA_PATH/PORTS-portmaster/use-sleep-blocklist.

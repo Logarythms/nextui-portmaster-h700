@@ -40,6 +40,10 @@ Unzip the new `PORTS.pak.zip` over the SD card the same way you installed it, re
   overlay; tap it again to hide it.** Holding Menu to adjust brightness
   still works as before. A couple of ports are exceptions — see
   [docs/h700-fixes.md](docs/h700-fixes.md) for which and why.
+- **Sleep works during ports.** A power-button press or closing the lid
+  suspends the running game; pressing power again wakes it, with audio
+  intact. On by default for every port — see
+  [docs/h700-fixes.md](docs/h700-fixes.md) to opt a game out.
 - Not every port runs — see below.
 
 ## Confirmed working games
@@ -168,8 +172,9 @@ those stay broken for now.
 <summary>Technical details</summary>
 
 <code>lib/gt-input-remap.so</code> is an <code>LD_PRELOAD</code> shim the launcher
-now injects into every h700 port. It has two independent halves, each with
-its own default:
+injects into every h700 port, with two independent halves, each with its own
+default. The launcher also spawns a separate sleep watcher for every port, on
+the same opt-out model:
 
 - **The input translator (opt-in)**, described above: corrects this
   device's shifted SDL joystick button indices (hardware-measured table)
@@ -186,9 +191,15 @@ its own default:
   graphics context. On by default for every port, except ones listed in
   <code>files/gt-hud-blocklist.txt</code> or the user's own
   <code>use-hud-blocklist</code>.
+- **Sleep support (opt-out)**: a power-button press or lid close suspends
+  the running port and resumes it on the next power press, routing audio
+  through a suspend-safe ALSA proxy so sound survives. On by default for
+  every port, except ones listed in
+  <code>files/gt-sleep-blocklist.txt</code> or the user's own
+  <code>use-sleep-blocklist</code>.
 
 Full story, including why this couldn't be a real display-compositor
-overlay: <a href="docs/h700-fixes.md">docs/h700-fixes.md</a>.
+overlay, and how sleep is made to work at all: <a href="docs/h700-fixes.md">docs/h700-fixes.md</a>.
 </details>
 
 ## Credits & license

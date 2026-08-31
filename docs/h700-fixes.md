@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F46) below match the internal numbering used while these were
+Fix IDs (F1–F47) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. A closing section records the ports
 that this platform genuinely can't run.
@@ -1232,3 +1232,159 @@ file. Nothing on an existing device changes (the zip ships no `libs/`, so a
 previously installed copy stays), and should a future fix ever make Weston
 viable here, harbourmaster can still download the official
 `weston_pkg_0.2.squashfs` on demand.
+
+## Sleep during ports: a watcher, plus an ALSA proxy that survives it (F47)
+
+**Why ports couldn't sleep.** NextUI's sleep support is a foreground-app
+feature: `nextui`/`minarch` watch `/dev/input/event0` for the power key and
+the lid's hall sensor, then run `$SYSTEM_PATH/bin/suspend`. `keymon`, the
+daemon that stays alive while a port runs, only handles volume and
+brightness — it has no sleep role. Once a port launches, nothing on-device
+is watching the power button or lid at all, so pressing power does nothing.
+
+**Trigger map (event0).** `gt-sleepmon` (`assets/gt-sleepmon.c`) opens
+`/dev/input/event0` itself — non-grabbing, so keymon keeps reading it too —
+and watches three codes:
+
+- `KEY_POWER` (116), **release** (value 0) — suspend
+- `KEY_INSERT` (110, the lid-close hall sensor), **press** (value 1) — suspend
+- `KEY_DELETE` (111, lid open) — ignored; the power button is the only wake
+  source
+
+Triggering on the power key's *release* (matching `minarch`'s own edge)
+avoids a second trigger firing on the way down. After a suspend/resume
+cycle the watcher swallows event0 for 2s of `CLOCK_BOOTTIME`: the waking
+power press arrives here too, and would otherwise instantly re-suspend.
+
+**The suspend-script contract.** On trigger, `gt-sleepmon` `SIGSTOP`s every
+live descendant of the launch.sh tree root — found by walking `/proc/*/stat`
+ppid chains rather than matching by name — execs `$SYSTEM_PATH/bin/suspend`
+with a fixed env (`SYSTEM_PATH`/`LD_LIBRARY_PATH` set explicitly, `PATH`
+pinned to the real system directories so the pak's own busybox wrappers
+can't shadow whatever `suspend` calls internally), waits for it to exit,
+then `SIGCONT`s the tree. On the way out, the launcher's `cleanup()` reaps
+the watcher by its recorded PID plus a `/proc/*/comm` scan for
+`gt-sleepmon` — a bare `killall` never matches through the pak's busybox
+wrapper shadow (the F15 lesson) — so a leaked watcher can't keep suspending
+NextUI after the port exits.
+
+**The audio wedge, and why only close+reopen recovers it.** The h700 BSP
+kernel wedges any ALSA PCM that was open across a suspend-to-RAM cycle: the
+stream stays `RUNNING` with the DMA engine dead, and — unlike a
+well-behaved ALSA driver — it never delivers `-ESTRPIPE` to tell the app to
+recover. A drained or XRUN'd stream re-wedges the same way on the next
+resume, so there is no recovery available at the PCM-state level; only a
+full `snd_pcm_close`+`snd_pcm_open` re-initializes the DMA/codec path. The
+port process itself never gets a signal telling it to do this, so the fix
+sits underneath it: `libasound_module_pcm_gt_suspend.so`
+(`assets/gt-alsa-suspend.c`) is an ALSA `ioplug` proxy between the port and
+the real hardware PCM. On every write it compares
+`CLOCK_BOOTTIME − CLOCK_MONOTONIC` against the value captured when its
+slave was last opened — monotonic time freezes across a suspend but
+boottime doesn't, so a jump past 0.5s means a suspend happened — and
+closes+reopens the slave before writing if so.
+
+**The asound.conf lock/hooks discovery.** NextUI's stock `/etc/asound.conf`
+locks the five h700 codec output controls (`LINEOUT Switch`, `SPK Switch`,
+both output-mixer switches, and digital volume) via `ctl_elems` hooks with
+`lock true`, which re-fire and reassert those values whenever their PCM is
+opened. `gt-asound.conf` copies that exact hook chain into
+`pcm.gt_stock_hooks`, so the suspend-proxy's slave reopen doesn't just
+recover the DMA path — it also re-fires the same routing hooks NextUI
+itself relies on, restoring codec output routing after resume rather than
+just raw playback.
+
+**The hook-clobber discovery, and why the config must be self-contained.**
+The first cut of `gt-asound.conf` included `/usr/share/alsa/alsa.conf` and
+then redefined `pcm.!default` to point at the proxy, on the assumption that
+a later definition in the env-supplied file would win. It doesn't: this was
+proven on the device — a `type null` slave override was silently ignored,
+and `aplay -v`'s chain dump showed the stock hooks chain still in effect.
+The reason is alsa.conf's own `@hooks` node, which loads `/etc/asound.conf`
+*after* the entire `ALSA_CONFIG_PATH` file has been parsed — so the stock
+`pcm.!default` always applies last and clobbers any override written
+earlier in that file, regardless of textual order. Layering "system config
+then ours" cannot work through `ALSA_CONFIG_PATH` on this alsa-lib.
+
+The fix, also device-proven (`aplay -v` shows "gt suspend-safe proxy" as
+the chain head), is for `gt-asound.conf` to skip the include entirely and
+define everything a port's ALSA client needs on its own: the routing chain
+below, plus a `ctl.hw` stanza — normally supplied by `/usr/share/alsa/
+alsa.conf` — that the `ctl_elems` hook needs to open `hw:0`; without it the
+hook fails with "Invalid CTL hw:0". `pcm.default` (no `!`, since there is no
+stock definition left to override) is then routed straight through the
+suspend proxy. `ALSA_CONFIG_PATH` is pointed at this `gt-asound.conf`
+(templated from `files/gt-asound.conf` with `@PAK_DIR@` substituted at
+launch), so this is transparent to every port that just opens ALSA's
+`"default"` device. One consequence of this design: ports see *only* this
+config, so stock alsa.conf device names like `pcm.playback_hp` are not
+visible to them — nothing currently uses them, so this is a non-issue today
+but worth knowing before adding a port-side device selector.
+
+This copy is a hand-maintained snapshot, not a generated one: if a future
+NextUI build ever changes the control names, lock values, or slave PCM in
+the stock `/etc/asound.conf` default chain, `files/gt-asound.conf`'s
+`pcm.gt_stock_hooks` must be updated to match or the suspend-proxy's reopen
+will restore the wrong (stale) routing — this now matters even more since
+there is no fallback to the system file to catch a stale drift underneath
+it.
+
+**The poll path must lie, or SDL dies (gate-discovered).** The first cut
+forwarded the slave's poll fds and revents verbatim and relied on the
+boottime-delta check in the transfer callback alone. The device gate
+(Pizza Tower, second wake) showed why that isn't enough: when the app is
+waiting for buffer space at the moment errors surface, recovery starts from
+`snd_pcm_wait`, not from a write. The suspended slave wakes `poll()` with
+`POLLERR`; alsa-lib sees an error revent while the ioplug frontend still
+reports `RUNNING` and turns it into `-EIO`; SDL2's ALSA backend treats an
+error `snd_pcm_recover` can't fix as a device disconnect
+(`SDL_OpenedAudioDeviceDisconnected`) and its audio thread never writes
+again — permanent silence no later wake can cure (observed live: audio
+thread idling in `nanosleep`, slave PCM parked in `SUSPENDED`, `appl_ptr`
+frozen). The first wake had recovered only because that cycle's first
+post-resume action happened to be a plain write, which reached the transfer
+callback's reopen. The fix: `poll_revents` never surfaces a dead slave's
+error bits — for a missing/suspended/XRUN slave, a detected boottime jump,
+or any `POLLERR/POLLHUP/POLLNVAL`, it reports `POLLOUT` instead, so the
+app's next write lands in the transfer callback where the reopen cure
+lives; and `prepare`/write errors fall back to a full reopen before any
+error is allowed to reach the app. OpenAL-soft (Balatro) masked all of
+this in round A because its backend retries rather than disconnecting —
+every SDL-audio engine (GameMaker via FMOD_SDL, native SDL2, FNA) was
+exposed.
+
+**The pointer must go through XRUN, not fake an empty ring
+(gate-discovered, take two).** The first repair had the pointer callback
+report an empty ring (delay 0) for a dead slave, so a stale full-buffer
+delay couldn't park the app in `poll()`. Celeste (FNA→SDL2) showed why
+that can't work: the ioplug pointer interface is modulo `buffer_size`,
+where "empty" and "full" are the *same position* — an app frozen with an
+exactly-full ring computes a delta of zero from the empty-ring report,
+`avail` stays 0, and the writer spins forever on an always-ready `poll()`
+(observed live via on-device gdb: `ALSA_PlayDevice` → `avail_update` →
+`snd_pcm_state` ioctl loop, ~100% CPU, no reopen ever reached). The
+correct route is the idiomatic ioplug one: for a non-live or post-suspend
+slave the pointer returns a negative error, ioplug flags the frontend
+`XRUN`, the app's standard `snd_pcm_recover(-EPIPE)` calls `prepare`, and
+the prepare callback performs the reopen. Ring fullness is irrelevant on
+that path.
+
+**Capture is not supported.** The routed `"default"` only implements the
+playback (`SND_PCM_STREAM_PLAYBACK`) side of the `ioplug` interface, so any
+port that opens `"default"` for capture gets `-ENOTSUP` instead of the stock
+chain's behavior — a no-op today since no installed port records audio, but
+worth knowing before adding one.
+
+**Blocklist opt-out.** Sleep support is on by default for every port. A
+launcher filename listed in the pak-shipped `files/gt-sleep-blocklist.txt`,
+or in the user's own
+`$USERDATA_PATH/PORTS-portmaster/use-sleep-blocklist`, disables both the
+watcher spawn and the ALSA proxy for that port — the same
+default-list-plus-user-override shape as F25's remap list and F34's HUD
+blocklist.
+
+**Never-poweroff.** Ports have no autosave, so a suspend failure is
+deliberately non-fatal: `gt-sleepmon` logs the `suspend` script's exit
+code, resumes the frozen tree anyway, and keeps playing. Escalating to a
+poweroff on failure was considered and rejected — losing unsaved progress
+to a sleep hiccup would be worse than just staying awake.

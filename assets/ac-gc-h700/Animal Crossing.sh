@@ -69,6 +69,26 @@ export LD_LIBRARY_PATH="/usr/lib32:$GT_AC_RUNTIME/libs.armhf:$GAMEDIR/libs.${DEV
 [ -d /usr/lib32/pipewire-0.3 ] && export PIPEWIRE_MODULE_DIR=/usr/lib32/pipewire-0.3
 export SDL_AUDIODRIVER=alsa   # GT-F45: stock SDL 2.0.12 can't parse a comma-list (pre-2.24) + NextUI has no PipeWire; force plain ALSA or SDL_Init aborts
 
+# gt-h700-alsa-armhf (F47): run_port routes every h700 port's ALSA "default"
+# through the pak's suspend-proxy plugin (ALSA_CONFIG_PATH -> /tmp/gt-asound.conf),
+# unless this port is sleep-blocklisted, in which case ALSA_CONFIG_PATH is unset
+# and this block is a no-op. That template's pcm_type.gt_suspend.lib line points
+# at the AARCH64 build of the plugin — AC's own 32-bit libasound.so.2
+# (libs.armhf/, loaded via LD_LIBRARY_PATH above) would dlopen it and fail on
+# ELF class mismatch, so snd_pcm_open("default") fails and AC launches silent.
+# Regenerate the same template with the armhf plugin build swapped in and
+# re-export ALSA_CONFIG_PATH to point at the armhf variant instead.
+if [ -n "${ALSA_CONFIG_PATH:-}" ] && [ -f "$PAK_DIR/files/gt-asound.conf" ]; then
+    sed -e "s|@PAK_DIR@|$PAK_DIR|g" \
+        -e "s|libasound_module_pcm_gt_suspend\.so|libasound_module_pcm_gt_suspend.armhf.so|" \
+        "$PAK_DIR/files/gt-asound.conf" > /tmp/gt-asound-armhf.conf
+    if [ -s /tmp/gt-asound-armhf.conf ]; then
+        export ALSA_CONFIG_PATH=/tmp/gt-asound-armhf.conf
+    else
+        unset ALSA_CONFIG_PATH   # fail closed: fall back to the system default rather than the broken aarch64 config
+    fi
+fi
+
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
 export SDL_VIDEODRIVER=mali   # GT-F45: the stock 32-bit SDL2 compiles only the mali/dummy video drivers; force mali (fbdev) — NextUI has no DRM/KMS
 export SDL_VIDEO_EGL_DRIVER="$GT_AC_RUNTIME/libs.armhf/libEGL.so"     # GT-F45: load EGL from our 32-bit lib by absolute path (robust vs LD search order)

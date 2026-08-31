@@ -773,6 +773,41 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-sleepmon: F47 — sleep for ports. NextUI sleep is a foreground-app
+  # feature (nextui/minarch watch event0 + hallkey and run bin/suspend; keymon
+  # does volume/brightness only), so during a port NOBODY watches the power
+  # key or lid. gt-sleepmon (pak bin/) fills that role: KEY_POWER release or
+  # lid-close on event0 -> SIGSTOP the port tree -> stock suspend script ->
+  # SIGCONT -> 2s event swallow (the waking press would otherwise instantly
+  # re-suspend). The ALSA env routes "default" through the pak's
+  # suspend-proxy plugin so audio survives (the BSP wedges any PCM open
+  # across a suspend; only close+reopen recovers). Opt-out via
+  # files/gt-sleep-blocklist.txt or the user's use-sleep-blocklist.
+  if ! grep -q 'gt-h700-sleepmon' "$f"; then
+    awk '$0 == "    \"$PAK_DIR/bin/bash\" \"$ROM_PATH\"" {
+      print "    # gt-h700-sleepmon / gt-h700-alsa-suspend (F47)"
+      print "    if [ \"$PLATFORM\" = \"h700\" ]; then"
+      print "        if grep -Fxq \"$ROM_NAME\" \"$PAK_DIR/files/gt-sleep-blocklist.txt\" 2>/dev/null \\"
+      print "            || grep -Fxq \"$ROM_NAME\" \"$USERDATA_PATH/PORTS-portmaster/use-sleep-blocklist\" 2>/dev/null; then"
+      print "            echo \"Sleep support disabled (blocklisted) for $ROM_NAME\""
+      print "        else"
+      print "            sed \"s|@PAK_DIR@|$PAK_DIR|g\" \"$PAK_DIR/files/gt-asound.conf\" > /tmp/gt-asound.conf"
+      print "            if [ -s /tmp/gt-asound.conf ]; then"
+      print "                export ALSA_CONFIG_PATH=/tmp/gt-asound.conf"
+      print "            else"
+      print "                echo \"gt-asound.conf template missing/empty; sleep audio proxy disabled for $ROM_NAME\""
+      print "            fi"
+      print "            \"$PAK_DIR/bin/gt-sleepmon\" $$ >/tmp/gt-sleepmon.log 2>&1 &"
+      print "            gt_sleepmon_pid=$!"
+      print "        fi"
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-source-heal: F29 — harbourmaster recreates its default
   # *.source.json files ONLY on first-run or a config-version migration
   # (harbour.py: the first-run branch writes HM_SOURCE_DEFAULTS;
@@ -894,6 +929,23 @@ edit_portmaster_launch() { # $1=launch.sh path
       print "    fi"
       print
       gt_in_pp = 0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-sleepmon-kill: F47 — reap the sleep watcher on pak exit. A leaked
+  # gt-sleepmon would keep suspending NextUI after the port exits. kill by
+  # recorded PID plus a /proc comm scan (in-pak killall never matches through
+  # the busybox wrapper shadow — the F15 lesson).
+  if ! grep -q 'gt-h700-sleepmon-kill' "$f"; then
+    awk '$0 == "cleanup() {" {
+      print $0
+      print "    # gt-h700-sleepmon-kill (F47): see edit_portmaster_launch"
+      print "    [ -n \"${gt_sleepmon_pid:-}\" ] && kill \"$gt_sleepmon_pid\" 2>/dev/null"
+      print "    for gt_p in /proc/[0-9]*/comm; do"
+      print "        [ \"$(cat \"$gt_p\" 2>/dev/null)\" = \"gt-sleepmon\" ] && kill \"$(basename \"$(dirname \"$gt_p\")\")\" 2>/dev/null"
+      print "    done"
       next
     }
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
@@ -1230,14 +1282,16 @@ do_portmaster() {
   cp "$tmp/minui-presenter" "$assembled/files/minui-presenter"
   chmod +x "$assembled/bin/minui-presenter" "$assembled/files/minui-presenter" || :
 
-  # E5: power-control stub — upstream binary is tg5040-built; deep sleep
-  # inside ports is a v1 non-goal on h700 (spec). preflight_checks only
-  # requires the command to exist; launch.sh backgrounds it, so instant
-  # exit 0 is fine. NOTE: this repackage is h700-only — do not deploy the
-  # staged pak to a tg5040.
+  # E5: power-control stub — upstream binary is tg5040-built and cannot run on
+  # h700. This stub is NOT the port-sleep feature: deep sleep during a port is
+  # provided separately by gt-sleepmon (F47; see edit_portmaster_launch's
+  # gt-h700-sleepmon splice) watching event0 directly. preflight_checks only
+  # requires minui-power-control to exist; launch.sh backgrounds it, so an
+  # instant exit 0 here is fine. NOTE: this repackage is h700-only — do not
+  # deploy the staged pak to a tg5040.
   cat > "$assembled/bin/minui-power-control" <<'PMEOF'
 #!/bin/sh
-# gt-h700-stub: deep sleep inside ports is out of scope on h700 (v1).
+# gt-h700-stub: upstream binary is tg5040-built; port sleep is provided by gt-sleepmon instead (F47).
 exit 0
 PMEOF
   chmod +x "$assembled/bin/minui-power-control"
@@ -1273,6 +1327,21 @@ PMEOF
   # in-game HUD overlay is known to misbehave (read by the same run_port
   # hook); users extend via use-hud-blocklist in userdata without rebuilding.
   cp "$ASSETS/gt-hud-blocklist.txt" "$assembled/files/gt-hud-blocklist.txt"
+
+  # gt-h700-sleepmon / gt-h700-alsa-suspend: F47 — sleep watcher + ALSA
+  # suspend-proxy (see edit_portmaster_launch). Fail closed on arch so a
+  # wrong-arch docker build can never ship (F45 lesson).
+  cp "$ASSETS/gt-sleepmon" "$assembled/bin/gt-sleepmon"
+  file "$assembled/bin/gt-sleepmon" | grep -q 'ELF 64-bit.*aarch64' \
+    || { echo "gt-sleepmon is not an aarch64 executable" >&2; exit 1; }
+  cp "$ASSETS/libasound_module_pcm_gt_suspend.so" "$assembled/lib/libasound_module_pcm_gt_suspend.so"
+  file "$assembled/lib/libasound_module_pcm_gt_suspend.so" | grep -q 'ELF 64-bit.*aarch64' \
+    || { echo "gt_suspend plugin is not an aarch64 shared object" >&2; exit 1; }
+  cp "$ASSETS/libasound_module_pcm_gt_suspend.armhf.so" "$assembled/lib/libasound_module_pcm_gt_suspend.armhf.so"
+  file "$assembled/lib/libasound_module_pcm_gt_suspend.armhf.so" | grep -q 'ELF 32-bit.*ARM' \
+    || { echo "gt_suspend armhf plugin is not a 32-bit ARM shared object" >&2; exit 1; }
+  cp "$ASSETS/gt-sleep-blocklist.txt" "$assembled/files/gt-sleep-blocklist.txt"
+  cp "$ASSETS/gt-asound.conf" "$assembled/files/gt-asound.conf"
 
   # gt-h700-nxengine-settings: F39 — h700-correct nxengine-evo (Cave Story Evo)
   # controls + resolution. nxengine-evo reads the raw SDL joystick and binds
