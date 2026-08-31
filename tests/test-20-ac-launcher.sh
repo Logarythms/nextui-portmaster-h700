@@ -93,13 +93,16 @@ assert_contains "$LAUNCHER" 'GT_AC_RUNTIME="$PAK_DIR/files/ac-gc-h700"'
 # the launcher must NOT still point the runtime at the game dir (F45 rebased to $PAK_DIR)
 assert_not_contains "$LAUNCHER" 'LD_PRELOAD="$GAMEDIR/gt-input-remap.armhf.so"'
 
-# --- the gptk carries the Nintendo<->Xbox face cross-swap + camera on L2/R2 ---
+# --- the gptk maps straight to AC's keybindings + camera on L2/R2 ---
+# F48 device gate: the earlier F45 static face cross-swap was removed — the
+# shim now applies the Nintendo/Xbox swap dynamically, so this is the straight
+# Nintendo baseline (gptk name = game button 1:1).
 GPTK="$ROOT/assets/ac-gc-h700/animalcrossing.gptk"
 [ -f "$GPTK" ] || { echo "missing $GPTK"; exit 1; }
-assert_contains "$GPTK" 'a = left_shift'   # gptk a -> game B
-assert_contains "$GPTK" 'b = space'        # gptk b -> game A
-assert_contains "$GPTK" 'x = y'            # gptk x -> game Y
-assert_contains "$GPTK" 'y = x'            # gptk y -> game X
+assert_contains "$GPTK" 'a = space'        # gptk a -> game A (Space)
+assert_contains "$GPTK" 'b = left_shift'   # gptk b -> game B (Left Shift)
+assert_contains "$GPTK" 'x = x'            # gptk x -> game X
+assert_contains "$GPTK" 'y = y'            # gptk y -> game Y
 assert_contains "$GPTK" 'l2 = left'        # camera
 assert_contains "$GPTK" 'r2 = right'
 

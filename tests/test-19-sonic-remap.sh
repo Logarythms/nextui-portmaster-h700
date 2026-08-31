@@ -33,14 +33,17 @@ for p in sonic1 sonic2; do
   assert_contains "$f" '^right = right$'
 done
 
-# per-game mapping: physical A(south)=gptk b, physical B(east)=gptk a
+# per-game mapping: physical A(south)=gptk b, physical B(east)=gptk a (shim
+# baseline). F48 device gate: a<->b swapped to the Nintendo baseline so
+# menu-confirm (RSDK-A) sits on the physical A/right face; the shim flips to
+# Xbox on demand. So RSDK-A key is on gptk a, RSDK-C key on gptk b.
 f1="$ROOT/assets/port-fixes/sonic1/sonic.gptk"
-assert_contains "$f1" '^b = z$'  # sonic1 RSDK-A key
-assert_contains "$f1" '^a = c$'  # sonic1 RSDK-C key
+assert_contains "$f1" '^a = z$'  # sonic1 RSDK-A key (gptk a)
+assert_contains "$f1" '^b = c$'  # sonic1 RSDK-C key (gptk b)
 
 f2="$ROOT/assets/port-fixes/sonic2/sonic.gptk"
-assert_contains "$f2" '^b = a$'  # sonic2 RSDK-A key
-assert_contains "$f2" '^a = d$'  # sonic2 RSDK-C key
+assert_contains "$f2" '^a = a$'  # sonic2 RSDK-A key (gptk a)
+assert_contains "$f2" '^b = d$'  # sonic2 RSDK-C key (gptk b)
 
 sh -n "$ROOT/build/build-pak.sh"
 assert_contains "$ROOT/build/build-pak.sh" 'port-fixes/sonic1'

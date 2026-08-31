@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F47) below match the internal numbering used while these were
+Fix IDs (F1–F48) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. A closing section records the ports
 that this platform genuinely can't run.
@@ -755,6 +755,8 @@ belt-and-braces.
 
 **Fixes**
 - F46: dropped the bundled tg5040 Weston runtime image from the pak (−44 MB download and SD footprint) — Weston ports can't display on the RG SP regardless, and the official image stays downloadable on demand
+- F47: ports can now sleep — a watcher daemon suspends the port tree on the power button / lid close, plus an ALSA suspend-proxy so audio survives the resume
+- F48: controller face-button layout (Nintendo vs Xbox A/B/X/Y) is now configurable — a `config.json` key plus a PortMaster GUI toggle drive the SDL gamecontrollerdb, the input-remap shim's synth ports, and OpenCrossing from one resolved value; factory default flips to Nintendo, matching the RG SP's printed labels
 
 **Upgrading from 0.3.2:** unzip-over (self-healing); no manual steps. A
 `weston_pkg_0.2.squashfs` already in `PortMaster/libs/` is left as is.
@@ -1388,3 +1390,89 @@ deliberately non-fatal: `gt-sleepmon` logs the `suspend` script's exit
 code, resumes the frozen tree anyway, and keeps playing. Escalating to a
 poweroff on failure was considered and rejected — losing unsaved progress
 to a sleep hiccup would be worse than just staying awake.
+
+## Configurable controller layout: Nintendo vs Xbox A/B/X/Y (F48)
+
+**Why.** Which physical button a game's abstract "A" maps to was previously
+fixed and inconsistent across port classes: clean SDL-GameController ports
+picked up whichever `gamecontrollerdb.txt` variant a hidden marker file
+selected (xbox by default), while shim-driven ports used a separate,
+independently-tuned table. Nothing was user-facing and the two paths could
+silently disagree. F48 replaces both with one config value that every port
+class consults.
+
+**Config keys (`$EMU_DIR/config/config.json` — PortMaster's own config
+file; `$EMU_DIR` = `.../PORTS.pak/PortMaster`).**
+
+- `gt-controller-layout` — global default, `"nintendo"` or `"xbox"`.
+- `gt-port-layout` — optional per-game override, an object mapping a
+  launcher filename (`ROM_NAME`, e.g. `"Sonic 1.sh"`) to `"nintendo"` or
+  `"xbox"`.
+
+**Resolver precedence (`files/gt-controller-layout.sh`, high→low).**
+
+1. per-game: `gt-port-layout[ROM_NAME]`, if present and a valid value;
+2. global: `gt-controller-layout`, if present and a valid value;
+3. legacy: a `nintendo*` marker file in `PORTS-portmaster` → `nintendo`
+   (kept for back-compat; redundant now that the factory default is
+   already `nintendo`);
+4. factory default: `nintendo`.
+
+Every read fails safe to the next tier — missing config file, missing key,
+malformed JSON, or an unrecognized value all fall through rather than
+aborting a launch. `run_port` resolves once per launch and both exports the
+result (`GT_CONTROLLER_LAYOUT`) and applies it to the active
+`gamecontrollerdb.txt` (`set_controller_layout`); `run_portmaster_gui` does
+the same `gamecontrollerdb.txt` step (global only) before pugwash starts,
+so the GUI's own SDL pad matches whatever the toggle last set.
+
+**Port-class coverage — one resolved value, every launch path.**
+
+| Class | Examples | Mechanism |
+|---|---|---|
+| Clean SDL GameController | most ports | `gamecontrollerdb.txt` swap (`set_controller_layout`) |
+| gptk/evdev-synth ports | BYTEPATH, Tunics!, Sonic 1/2, Lasagna Boy, Road Invaders, The Starlit Escape | the input-remap shim reads `GT_CONTROLLER_LAYOUT` and swaps `gt_button_slot()`'s a↔b / x↔y output |
+| Custom launcher (evdev) | OpenCrossing / Animal Crossing | the same shim change, via the armhf build (`gt-input-remap.armhf.so`) |
+| GUI confirm/back | PortMaster-GUI itself | two `patch_pylibs` helpers — `gt_patch_platform_layout.py` adds `PlatformTrimUI.loaded()` (drives `WANT_XBOX_FIX`/`WANT_SWAP_BUTTONS` from the config key) and `gt_patch_optionscene_layout.py` adds the "Controller Layout" toggle to `OptionScene` (writes the key, calls `save_config()`) |
+| Per-game stored mapping | Cave Story (Evo) `settings.dat`; LÖVE / `apply_button_map` ports (Balatro, etc.) | not covered — see follow-up below |
+
+> The clean-SDL row covers ports that read the shared
+> `SDL_GAMECONTROLLERCONFIG_FILE` we swap. Ports that export their **own**
+> inline `SDL_GAMECONTROLLERCONFIG` — the PortMaster `apply_button_map` /
+> LÖVE-runtime pattern, sourced from a per-game `controller-map.txt` the port
+> writes from its own in-game button setup — override that file, so the swap
+> never reaches them. They belong to the per-game-stored-mapping (follow-up)
+> class alongside Cave Story's `settings.dat`, not the clean-SDL row.
+
+**Factory-default flip: xbox → nintendo.** The RG SP's face buttons are
+printed with Nintendo labels, so `nintendo` (A = the physically-A/right
+button) is now the out-of-the-box default, matching what's printed on the
+hardware. No config migration is needed: both the GUI and `launch.sh`
+resolve the same way when `gt-controller-layout` is absent, so an existing
+install with no key already resolves to the new default. A per-game
+`gt-port-layout` entry lets a specific game stay on the other layout if
+needed.
+
+**Round 1 (this feature) vs follow-up.** Round 1 covers: the global toggle
+in the PortMaster GUI, every port class above except opaque-binary-config
+ports, and per-game overrides via `config.json` (read-only — nothing in
+the GUI writes `gt-port-layout` yet). Follow-up, out of scope here: a
+per-game toggle surfaced in the GUI itself, and the **per-game-stored-mapping**
+ports — Cave-Story-class ports that bind raw joystick button *indices* to game
+actions in an opaque `settings.dat`, plus LÖVE / `apply_button_map` ports
+(Balatro and other runtime ports) that persist their own `controller-map.txt`
+and export it as an inline `SDL_GAMECONTROLLERCONFIG` overriding ours. Both
+persist a per-port map that one system value can't flip; each needs a
+layout-swapped second blob shipped per port, selected by the resolved layout,
+rather than a single conditional.
+
+**Polarity confirmed on device (RG SP, 2026-09-01).** The *global* polarity
+shipped correct — the shim's a↔b/x↔y swap sense and the GUI's
+`WANT_SWAP_BUTTONS` sense both needed no flip. Every class agreed at the gate:
+Nintendo = confirm/"A" on the physical-A/right face, Xbox = the bottom face —
+across the GUI, a clean SDL port (Celeste), the shim ports, OpenCrossing, and a
+per-game override. Two ports needed a per-port **gptk** correction (not a global
+flip): Sonic 1/2 and Animal Crossing had gptk button conventions authored for
+the pre-F48 static layout, so their `a`/`b` (and, for Animal Crossing, `x`/`y`)
+bindings were swapped to the Nintendo baseline and now let the shim drive the
+layout dynamically.

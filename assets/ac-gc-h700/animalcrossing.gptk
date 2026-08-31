@@ -9,20 +9,21 @@
 # The RG SP has no analog stick, so the D-pad drives the Main Stick (walking);
 # L2/R2 rotate the camera (C-stick left/right).
 #
-# NOTE the cross-assignment on the four face buttons: the RG SP is Nintendo-
-# labelled but the ports run an Xbox-positional layout, so the shim's slot for
-# gptk `a`/`x` is physically the B/Y button and vice-versa. Device-confirmed
-# 2026-08-28 (a/b + x/y felt swapped under the straight mapping), so we cross-
-# assign here to match every other port: gptk `a`->game B, `b`->game A,
-# `x`->game Y, `y`->game X.
+# Face buttons map STRAIGHT to AC's keybindings.ini: gptk `a`->game A (Space),
+# `b`->game B (Left Shift), `x`->game X, `y`->game Y. F48 (device gate,
+# 2026-09-01): the shim now applies the Nintendo/Xbox layout swap dynamically
+# from GT_CONTROLLER_LAYOUT, so this file is the un-swapped Nintendo baseline.
+# The earlier F45 static cross-assignment (a<->b, x<->y) double-applied with the
+# new shim swap and came out exactly reversed on device, so it was removed.
+# Device-confirmed 2026-09-01: A/B/X/Y correct in both layouts.
 up = w
 down = s
 left = a
 right = d
-a = left_shift
-b = space
-x = y
-y = x
+a = space
+b = left_shift
+x = x
+y = y
 l1 = q
 r1 = e
 l2 = left

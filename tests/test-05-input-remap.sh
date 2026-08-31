@@ -53,11 +53,11 @@ ir=$(grep -n 'export GT_INPUT_REMAP=1' "$work/launch.sh" | head -1 | cut -d: -f1
 [ "$gate" -lt "$ir" ] || { echo "GT_INPUT_REMAP must be inside the allowlist gate"; exit 1; }
 # placement: inside run_port, immediately guarding the port exec — after the
 # controller-layout selection, before the bash invocation of the port script
-layout_nintendo_line=$(grep -n 'set_controller_layout nintendo' "$work/launch.sh" | head -1 | cut -d: -f1)
+layout_line=$(grep -Fn 'set_controller_layout "$gt_layout"' "$work/launch.sh" | head -1 | cut -d: -f1)
 hook_line=$(grep -n 'gt-h700-port-remap' "$work/launch.sh" | head -1 | cut -d: -f1)
 # shellcheck disable=SC2016
 bash_exec_line=$(grep -n '"\$PAK_DIR/bin/bash" "\$ROM_PATH"' "$work/launch.sh" | head -1 | cut -d: -f1)
-[ "$layout_nintendo_line" -lt "$hook_line" ] || { echo "port-remap hook is not inside run_port (before layout selection)"; exit 1; }
+[ "$layout_line" -lt "$hook_line" ] || { echo "port-remap hook is not inside run_port (before layout selection)"; exit 1; }
 [ "$hook_line" -lt "$bash_exec_line" ] || { echo "port-remap hook is not before the port bash exec"; exit 1; }
 sh -n "$work/launch.sh" || { echo "edited launch.sh does not parse"; exit 1; }
 

@@ -951,6 +951,63 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-controller-layout: F48 — replace the upstream nintendo/xbox pick
+  # (a single global "nintendo*" marker file) with the config.json resolver:
+  # per-game > global > legacy marker > nintendo. Also export GT_CONTROLLER_LAYOUT
+  # so the input shim swaps a<->b / x<->y for gptk/evdev synth ports. The
+  # upstream "nintendo_file=" line is left in place (anchor for the other blocks
+  # + tier-3 legacy input); only the if/else that consumes it is replaced.
+  if ! grep -q 'gt-h700-controller-layout (F48): resolve' "$f"; then
+    awk '
+    /^    if \[ -n "\$nintendo_file" \]; then$/ {
+      print "    # gt-h700-controller-layout (F48): resolve nintendo/xbox from config.json"
+      print "    gt_layout=$(\"$PAK_DIR/files/gt-controller-layout.sh\" \"$ROM_NAME\" 2>/dev/null)"
+      print "    [ \"$gt_layout\" = nintendo ] || [ \"$gt_layout\" = xbox ] || gt_layout=nintendo"
+      print "    set_controller_layout \"$gt_layout\""
+      print "    export GT_CONTROLLER_LAYOUT=\"$gt_layout\""
+      gt_skip=1; next
+    }
+    gt_skip==1 && /^    fi$/ { gt_skip=0; next }
+    gt_skip==1 { next }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-controller-layout-gui: F48 — the GUI (pugwash) reads the same choice.
+  # Replace run_portmaster_gui's hardcoded `set_controller_layout xbox` with the
+  # RESOLVED global layout so the GUI pad map matches config.json. Scoped to
+  # run_portmaster_gui via in_gui so run_port's identical line is untouched.
+  if ! grep -q 'gt-h700-controller-layout-gui' "$f"; then
+    awk '
+    $0 == "run_portmaster_gui() {" { print; gt_in_gui=1; next }
+    gt_in_gui==1 && $0 == "    set_controller_layout xbox" {
+      print "    # gt-h700-controller-layout-gui (F48): apply the resolved global layout for the GUI"
+      print "    gt_gui_layout=$(\"$PAK_DIR/files/gt-controller-layout.sh\" 2>/dev/null)"
+      print "    [ \"$gt_gui_layout\" = nintendo ] || [ \"$gt_gui_layout\" = xbox ] || gt_gui_layout=nintendo"
+      print "    set_controller_layout \"$gt_gui_layout\""
+      gt_in_gui=0; next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-controller-layout-platform: F48 — patch PlatformTrimUI.loaded() so the
+  # GUI's confirm/back follows config.json (same key launch.sh reads for ports).
+  if ! grep -q 'gt-h700-controller-layout-platform' "$f"; then
+    awk '{ print } $0 == "        \"$EMU_DIR/pylibs/harbourmaster/platform.py\" portmaster_install" {
+      print "    # gt-h700-controller-layout-platform (F48): drive the GUI swap from config.json"
+      print "    python3 \"$PAK_DIR/src/gt_patch_platform_layout.py\" \\"
+      print "        \"$EMU_DIR/pylibs/harbourmaster/platform.py\""
+    }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-controller-layout-options: F48 — add the layout toggle to OptionScene.
+  if ! grep -q 'gt-h700-controller-layout-options' "$f"; then
+    awk '{ print } $0 == "        \"$EMU_DIR/pylibs/harbourmaster/platform.py\" portmaster_install" {
+      print "    # gt-h700-controller-layout-options (F48): OptionScene layout toggle"
+      print "    python3 \"$PAK_DIR/src/gt_patch_optionscene_layout.py\" \\"
+      print "        \"$EMU_DIR/pylibs/pugscene.py\""
+    }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   rm -f "$f.bak"
 }
 
@@ -1269,6 +1326,20 @@ do_portmaster() {
   edit_portmaster_control "$assembled/files/control.txt"
   append_controllerdb "$ASSETS/gamecontrollerdb-h700-xbox.txt" "$assembled/files/gamecontrollerdb_xbox.txt"
   append_controllerdb "$ASSETS/gamecontrollerdb-h700-nintendo.txt" "$assembled/files/gamecontrollerdb_nintendo.txt"
+
+  # F48: stage the layout resolver run_port/run_portmaster_gui call into.
+  cp -f "$ASSETS/gt-controller-layout.sh" "$assembled/files/gt-controller-layout.sh"
+  chmod +x "$assembled/files/gt-controller-layout.sh"
+
+  # F48: stage the GUI PlatformTrimUI patch helper that patch_pylibs invokes.
+  # $assembled/src/ already exists from the upstream ports-pak.zip extraction
+  # (it ships disable_python_function.py); mkdir -p is defensive.
+  mkdir -p "$assembled/src"
+  cp "$ROOT/src/gt_patch_platform_layout.py" "$assembled/src/gt_patch_platform_layout.py"
+
+  # F48: stage the OptionScene layout-toggle patch helper that patch_pylibs invokes.
+  cp "$ROOT/src/gt_patch_optionscene_layout.py" "$assembled/src/gt_patch_optionscene_layout.py"
+
   strip_weston_runtime "$assembled"
 
   # libgl insurance: CFW_NAME resolves to "Base OS" on the device; if a port

@@ -133,12 +133,24 @@ static gt_key gt_keyname(const char *name) {
     return k; /* unknown (incl. gptokeyb's \" placeholder): no mapping */
 }
 
+/* gt-h700-controller-layout (F48): when the user picks the xbox layout, the
+ * gptk/evdev synth swaps a<->b and x<->y so the physical button acting as "A"
+ * matches the SDL gamecontrollerdb the same launch installs. Loaded once from
+ * GT_CONTROLLER_LAYOUT. Default (nintendo) leaves the measured table unchanged
+ * so today's shim ports keep their working mapping. POLARITY (which layout
+ * swaps) is confirmed at the device gate — a one-line flip here if reversed. */
+static int gt_ab_swap = 0;
+static void gt_layout_load(void) {
+    const char *l = getenv("GT_CONTROLLER_LAYOUT");
+    gt_ab_swap = (l && !strcmp(l, "xbox")) ? 1 : 0;
+}
+
 /* Post-v1-remap (TrimUI-layout) button index for each gptk button name. */
 static int gt_button_slot(const char *name) {
-    if (!strcmp(name, "b"))     return 0;
-    if (!strcmp(name, "a"))     return 1;
-    if (!strcmp(name, "y"))     return 2;
-    if (!strcmp(name, "x"))     return 3;
+    if (!strcmp(name, "b"))     return gt_ab_swap ? 1 : 0;
+    if (!strcmp(name, "a"))     return gt_ab_swap ? 0 : 1;
+    if (!strcmp(name, "y"))     return gt_ab_swap ? 3 : 2;
+    if (!strcmp(name, "x"))     return gt_ab_swap ? 2 : 3;
     if (!strcmp(name, "l1"))    return 4;
     if (!strcmp(name, "r1"))    return 5;
     if (!strcmp(name, "back") ||
@@ -687,6 +699,17 @@ int main(void) {
         if (!m.loaded) return fail("map not marked loaded");
     }
 
+    /* F48: layout swap */
+    gt_ab_swap = 0;
+    if (gt_button_slot("a") != 1 || gt_button_slot("b") != 0) return fail("nintendo a/b slots");
+    if (gt_button_slot("x") != 3 || gt_button_slot("y") != 2) return fail("nintendo x/y slots");
+    if (gt_button_slot("l1") != 4) return fail("nintendo l1 slot moved");
+    gt_ab_swap = 1;
+    if (gt_button_slot("a") != 0 || gt_button_slot("b") != 1) return fail("xbox a/b slots");
+    if (gt_button_slot("x") != 2 || gt_button_slot("y") != 3) return fail("xbox x/y slots");
+    if (gt_button_slot("l1") != 4) return fail("xbox l1 slot moved");
+    gt_ab_swap = 0;
+
     /* v2: hat edges — releases before presses, diagonal transitions */
     {
         int slots[4], pressed[4], n;
@@ -1121,6 +1144,7 @@ static void gt_init(void) {
     if (gt_hud_on()) {
         fprintf(stderr, "gt-input-remap: HUD enabled\n");
     }
+    gt_layout_load(); /* F48: independent of GT_REMAP_GPTK/GT_EVDEV_KEYS below */
     const char *path = getenv("GT_REMAP_GPTK");
     if (!path || !*path) return;
     FILE *fh = fopen(path, "r");

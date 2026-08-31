@@ -130,9 +130,9 @@ assert_eq "$(grep -c 'gt-h700-presenter-quiesce' "$work/launch.sh")" "1" "presen
 assert_contains "$work/launch.sh" 'show_message "Starting PortMaster..." 10 &'
 gui_fn_line=$(grep -n 'run_portmaster_gui() {' "$work/launch.sh" | head -1 | cut -d: -f1)
 quiesce_line=$(grep -n 'gt-h700-presenter-quiesce' "$work/launch.sh" | head -1 | cut -d: -f1)
-layout_line=$(grep -n 'set_controller_layout xbox' "$work/launch.sh" | head -1 | cut -d: -f1)
+layout_line=$(grep -Fn 'set_controller_layout "$gt_gui_layout"' "$work/launch.sh" | head -1 | cut -d: -f1)
 [ "$gui_fn_line" -lt "$quiesce_line" ] || { echo "gt-h700-presenter-quiesce is not inside run_portmaster_gui"; exit 1; }
-[ "$quiesce_line" -lt "$layout_line" ] || { echo "gt-h700-presenter-quiesce is not before set_controller_layout xbox"; exit 1; }
+[ "$quiesce_line" -lt "$layout_line" ] || { echo "gt-h700-presenter-quiesce is not before the GUI controller-layout selection"; exit 1; }
 
 # --- launch.sh: F16 gt-h700-presenter-sync — no double-background spawn race ---
 # show_message's forever branch self-backgrounds the presenter, so the

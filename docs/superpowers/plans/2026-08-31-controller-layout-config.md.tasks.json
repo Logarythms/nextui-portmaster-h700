@@ -1,0 +1,61 @@
+{
+  "planPath": "docs/superpowers/plans/2026-08-31-controller-layout-config.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: Layout resolver script",
+      "status": "completed",
+      "description": "**Goal:** A standalone POSIX-sh helper that echoes the effective layout (nintendo/xbox) using the config.json precedence, unit-tested in isolation.\n\n**Files:**\n- Create: `assets/gt-controller-layout.sh`\n- Create: `tests/test-24-controller-layout-resolve.sh`\n\n**Acceptance Criteria:**\n- per-game wins over global; global used when no per-game match; missing/malformed/invalid -> nintendo; legacy marker honored; test prints OK or SKIP.\n\n**Verify:** `sh tests/test-24-controller-layout-resolve.sh` -> ends `... OK` (or SKIP). Full code in the plan doc (Task 1).\n\n```json:metadata\n{\"files\": [\"assets/gt-controller-layout.sh\", \"tests/test-24-controller-layout-resolve.sh\"], \"verifyCommand\": \"sh tests/test-24-controller-layout-resolve.sh\", \"acceptanceCriteria\": [\"per-game wins over global\", \"global used when no per-game match\", \"missing/malformed/invalid -> nintendo\", \"legacy marker honored\", \"test prints OK or SKIP\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Wire resolver into launch.sh (ports + GUI DB)",
+      "status": "completed",
+      "blockedBy": [
+        1
+      ],
+      "description": "**Goal:** build-pak.sh injects gt-h700 blocks so run_port replaces the upstream nintendo_file if/else with the resolver (+ exports GT_CONTROLLER_LAYOUT), run_portmaster_gui applies the global layout before pugwash, and the resolver is staged onto the pak.\n\n**Files:**\n- Modify: `build/build-pak.sh` (edit_portmaster_launch; assemble step)\n- Create: `tests/test-25-controller-layout-inject.sh`\n\n**Acceptance Criteria:**\n- run_port if/else replaced by resolver + GT_CONTROLLER_LAYOUT export; nintendo_file anchor preserved; run_portmaster_gui applies global layout; resolver staged 0755; idempotent.\n\n**Verify:** `sh tests/test-25-controller-layout-inject.sh` -> ends `... OK`. Full awk blocks in the plan doc (Task 2).\n\n```json:metadata\n{\"files\": [\"build/build-pak.sh\", \"tests/test-25-controller-layout-inject.sh\"], \"verifyCommand\": \"sh tests/test-25-controller-layout-inject.sh\", \"acceptanceCriteria\": [\"run_port if/else replaced by resolver + GT_CONTROLLER_LAYOUT export\", \"nintendo_file anchor preserved\", \"run_portmaster_gui applies global layout\", \"resolver staged 0755\", \"idempotent\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Make the input shim layout-aware",
+      "status": "completed",
+      "description": "**Goal:** gt-input-remap.c reads GT_CONTROLLER_LAYOUT and swaps a<->b / x<->y button slots for gptk/evdev synth ports (BYTEPATH, Tunics!, Sonic 1/2, Lasagna Boy, Road Invaders, The Starlit Escape, OpenCrossing via armhf); host-tested and rebuilt.\n\n**Files:**\n- Modify: `assets/gt-input-remap.c`\n- Modify (rebuilt): `assets/gt-input-remap.so`, `assets/gt-input-remap.armhf.so`\n- Create: `tests/test-26-controller-layout-shim.sh`\n\n**Acceptance Criteria:**\n- nintendo=current table, xbox=swapped a/b + x/y; non-face slots unchanged; loaded from GT_CONTROLLER_LAYOUT; GT_REMAP_TEST passes; make shim rebuilds both .so with correct arch.\n\n**Verify:** `sh tests/test-26-controller-layout-shim.sh` -> ends `... OK`. make shim needs network (dangerouslyDisableSandbox). Full code in the plan doc (Task 3).\n\n```json:metadata\n{\"files\": [\"assets/gt-input-remap.c\", \"assets/gt-input-remap.so\", \"assets/gt-input-remap.armhf.so\", \"tests/test-26-controller-layout-shim.sh\"], \"verifyCommand\": \"sh tests/test-26-controller-layout-shim.sh\", \"acceptanceCriteria\": [\"nintendo=current table, xbox=swapped a/b + x/y\", \"non-face slots unchanged\", \"loaded from GT_CONTROLLER_LAYOUT\", \"GT_REMAP_TEST passes\", \"make shim rebuilds both .so with correct arch\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: GUI \u2014 PlatformTrimUI.loaded() drives swap",
+      "status": "completed",
+      "description": "**Goal:** A Python helper (invoked by patch_pylibs) inserts a loaded() into PlatformTrimUI so the GUI's confirm/back (WANT_XBOX_FIX + WANT_SWAP_BUTTONS) follow cfg_data['gt-controller-layout'].\n\n**Files:**\n- Create: `src/gt_patch_platform_layout.py`\n- Modify: `build/build-pak.sh` (edit_portmaster_launch, inside patch_pylibs)\n- Create: `tests/test-27-platform-layout-patch.sh`\n\n**Acceptance Criteria:**\n- loaded() inserted reading gt-controller-layout; sets WANT_XBOX_FIX/WANT_SWAP_BUTTONS; idempotent; valid python; patch_pylibs call injected inside F33 guard.\n\n**Verify:** `sh tests/test-27-platform-layout-patch.sh` -> ends `... OK`. Full helper in the plan doc (Task 4).\n\n```json:metadata\n{\"files\": [\"src/gt_patch_platform_layout.py\", \"build/build-pak.sh\", \"tests/test-27-platform-layout-patch.sh\"], \"verifyCommand\": \"sh tests/test-27-platform-layout-patch.sh\", \"acceptanceCriteria\": [\"loaded() inserted reading gt-controller-layout\", \"sets WANT_XBOX_FIX/WANT_SWAP_BUTTONS\", \"idempotent\", \"valid python\", \"patch_pylibs call injected inside F33 guard\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: GUI \u2014 OptionScene layout toggle",
+      "status": "completed",
+      "description": "**Goal:** A Python helper (invoked by patch_pylibs) adds a Controller Layout: Nintendo/Xbox entry to OptionScene that flips cfg_data['gt-controller-layout'] and saves \u2014 mirroring toggle-experimental.\n\n**Files:**\n- Create: `src/gt_patch_optionscene_layout.py`\n- Modify: `build/build-pak.sh` (edit_portmaster_launch, inside patch_pylibs)\n- Create: `tests/test-28-optionscene-layout-patch.sh`\n\n**Acceptance Criteria:**\n- add_option + press branch inserted in OptionScene; flips cfg_data + save_config + label; confined to OptionScene; idempotent + valid python; patch_pylibs call injected.\n\n**Verify:** `sh tests/test-28-optionscene-layout-patch.sh` -> ends `... OK`. Full helper in the plan doc (Task 5).\n\n```json:metadata\n{\"files\": [\"src/gt_patch_optionscene_layout.py\", \"build/build-pak.sh\", \"tests/test-28-optionscene-layout-patch.sh\"], \"verifyCommand\": \"sh tests/test-28-optionscene-layout-patch.sh\", \"acceptanceCriteria\": [\"add_option + press branch inserted in OptionScene\", \"flips cfg_data + save_config + label\", \"confined to OptionScene\", \"idempotent + valid python\", \"patch_pylibs call injected\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Docs + full test suite + pak build",
+      "status": "completed",
+      "blockedBy": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "description": "**Goal:** Document F48, keep the suite green, and prove a real pak build carries every piece (staged resolver, injected launch.sh blocks, both pylibs helpers).\n\n**Files:**\n- Modify: `docs/h700-fixes.md` (F48 entry + changelog)\n- Modify: `README.md` (mention per pak-release-notes-style)\n\n**Acceptance Criteria:**\n- F48 doc entry present; make test green/skip; make pak builds the zip; built pak carries resolver + injected blocks + both pylibs helpers.\n\n**Verify:** `make test` -> all OK/SKIP; `make pak` (dangerouslyDisableSandbox) -> zip; grep checks in the plan doc pass. Details in the plan doc (Task 6).\n\n```json:metadata\n{\"files\": [\"docs/h700-fixes.md\", \"README.md\"], \"verifyCommand\": \"make test\", \"acceptanceCriteria\": [\"F48 doc entry present\", \"make test green/skip\", \"make pak builds the zip\", \"built pak carries resolver + injected blocks + both pylibs helpers\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: Device gate on the RG SP",
+      "status": "completed",
+      "blockedBy": [
+        6
+      ],
+      "description": "**Goal:** **USER-ORDERED GATE \u2014 NON-SKIPPABLE.** This task was requested by the user in the current conversation. It MUST NOT be closed by walking around it, by declaring it verified inline, or by substituting a cheaper check. Close only after every item in acceptanceCriteria has been re-validated independently, with output captured. Verify on-device (real RG SP) that the layout choice applies consistently across the GUI and every port class, and pin the swap polarity.\n\n**Files:** none (device verification; may yield one-line polarity flips in assets/gt-input-remap.c and/or src/gt_patch_platform_layout.py).\n\n**Acceptance Criteria:**\n- GUI toggle flips confirm/back + glyphs consistently, persists across restart; clean SDL port A matches layout; all shim ports play + A/B consistent both layouts; OpenCrossing follows layout; per-game override isolates one port; GUI vs ports agree on physical A (polarity pinned).\n\n**Verify:** Camille exercises the RG SP against the checklist and confirms each item; capture the observed layout (Nintendo/Xbox) per test. Steps in the plan doc (Task 7).\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"manual device gate on the RG SP\", \"acceptanceCriteria\": [\"GUI toggle flips confirm/back + glyphs consistently, persists across restart\", \"clean SDL port A matches layout\", \"all shim ports play + A/B consistent both layouts\", \"OpenCrossing follows layout\", \"per-game override isolates one port\", \"GUI vs ports agree on physical A (polarity pinned)\"], \"modelTier\": \"standard\", \"userGate\": true, \"tags\": [\"user-gate\"], \"requiresUserSpecification\": false, \"gateScope\": \"device\", \"requireEvidenceTokens\": [[\"nintendo\"], [\"xbox\"]]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-08-31T23:01:31Z"
+}

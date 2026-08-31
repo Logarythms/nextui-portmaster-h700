@@ -35,7 +35,10 @@ Unzip the new `PORTS.pak.zip` over the SD card the same way you installed it, re
 ## Using it
 
 - **PortMaster's self-update is disabled by this build.** Updating would replace the h700-patched runtime with the official one, which won't run on the RG SP — so the update prompt never appears, and even a manually triggered update is a no-op. New pak versions come as releases of this repository instead.
-- **Buttons use the Xbox layout** (A / B / X / Y in their Xbox positions).
+- **Buttons default to the Nintendo layout** (A / B / X / Y match the
+  printed labels). Changeable globally from PortMaster's own **Options**
+  menu, or per game — see [docs/h700-fixes.md](docs/h700-fixes.md) for the
+  per-game config.
 - **Tap Menu once during a game to show a battery/time/volume/brightness
   overlay; tap it again to hide it.** Holding Menu to adjust brightness
   still works as before. A couple of ports are exceptions — see

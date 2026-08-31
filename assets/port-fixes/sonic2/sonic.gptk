@@ -4,15 +4,20 @@
 # Y(north)=gptk `x` (device trace, 2026-08-28). RSDK's shared action map has
 # only two jump actions (A=jump, C=jump; B=pause; X/Y/Z=nothing), so to get
 # the physical A+B faces jumping with DISTINCT keys (no duplicate-key
-# crash class) we map gptk `b`->this game's RSDK-A key and gptk `a`->this
-# game's RSDK-C key. X/Y are deliberately left unmapped — only two jump
-# keys exist to bind. The RSDK-A/RSDK-C keys differ per game (separate
-# [Keyboard 1] tables); this file is Sonic 2's. back=esc is kept, not
-# repurposed, to preserve a quit path.
+# crash class) we bind them to this game's RSDK-A and RSDK-C keys. X/Y are
+# deliberately left unmapped — only two jump keys exist to bind. The
+# RSDK-A/RSDK-C keys differ per game (separate [Keyboard 1] tables); this
+# file is Sonic 2's. back=esc is kept, not repurposed, to preserve a quit path.
+#
+# F48 (device gate, 2026-09-01): the shim now applies the Nintendo/Xbox layout
+# swap dynamically from GT_CONTROLLER_LAYOUT, so a/b are set to the Nintendo
+# baseline (a<->b swapped vs the original F43 assignment) — menu-confirm
+# (RSDK-A) lands on the physical A/right face under the default, and the shim
+# flips it to Xbox on demand. So gptk `a`->RSDK-A key, `b`->RSDK-C key.
 back = esc
 start = enter
-b = a
-a = d
+b = d
+a = a
 up = up
 down = down
 left = left

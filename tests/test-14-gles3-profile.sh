@@ -43,11 +43,11 @@ assert_contains "$work/launch.sh" 'export LD_PRELOAD="$PAK_DIR/lib/gt-gles3-prof
 # port bash exec — same window as the input-remap / fmod-audio hooks; order
 # among the three is irrelevant (disjoint interposed symbols, all prepend
 # LD_PRELOAD).
-layout_nintendo_line=$(grep -n 'set_controller_layout nintendo' "$work/launch.sh" | head -1 | cut -d: -f1)
+layout_line=$(grep -Fn 'set_controller_layout "$gt_layout"' "$work/launch.sh" | head -1 | cut -d: -f1)
 hook_line=$(grep -n 'gt-h700-gles3-profile' "$work/launch.sh" | head -1 | cut -d: -f1)
 # shellcheck disable=SC2016
 bash_exec_line=$(grep -n '"\$PAK_DIR/bin/bash" "\$ROM_PATH"' "$work/launch.sh" | head -1 | cut -d: -f1)
-[ "$layout_nintendo_line" -lt "$hook_line" ] || { echo "gles3-profile hook is not inside run_port (before layout selection)"; exit 1; }
+[ "$layout_line" -lt "$hook_line" ] || { echo "gles3-profile hook is not inside run_port (before layout selection)"; exit 1; }
 [ "$hook_line" -lt "$bash_exec_line" ] || { echo "gles3-profile hook is not before the port bash exec"; exit 1; }
 sh -n "$work/launch.sh" || { echo "edited launch.sh does not parse"; exit 1; }
 
