@@ -95,8 +95,9 @@ directory so it never depends on what the host image happens to provide.
   four Sonic binaries (every soname resolves).
 - **F41 — the RSDK Sonic ports render as a narrow vertical strip.** The port
   launcher hardcodes `ScreenWidth` `LOW=214` (0.89:1) for a 3:2 display; on the
-  h700 720×480 that leaves huge side bars. `run_port` rewrites `LOW=214`→`LOW=360`
-  (240×720/480, fills the screen), mtime-neutrally inside the F32 window.
+  h700 720×480 that leaves huge side bars. `run_port` rewrites `LOW=214` to the
+  filling value `240×W/H` (360 on the RG SP's 720×480; panel size from the F51
+  device profile), mtime-neutrally inside the F32 window.
 
 ## Roms launcher trigger file (F2)
 
@@ -759,6 +760,7 @@ belt-and-braces.
 - F48: controller face-button layout (Nintendo vs Xbox A/B/X/Y) is now configurable — a `config.json` key plus a PortMaster GUI toggle drive the SDL gamecontrollerdb, the input-remap shim's synth ports, and OpenCrossing from one resolved value; factory default flips to Nintendo, matching the RG SP's printed labels
 - F49: Cave Story (Evo) now follows the resolved controller layout — its `settings.dat` face-button bindings are conformed on launch, byte-patched and idempotent
 - F50: the controller layout can now be set per game from that port's own info screen in the PortMaster GUI, and the global toggle moved up to be visible without scrolling; self-configuring ports (Balatro-class) show a disclaimer instead, by design
+- F51: the RG SP-specific hardware constants are now device-keyed — other h700 NextUI devices (RG34XXSP, RG35XX family, RG40XX family) get their own PortMaster profile, panel geometry, Sonic screen fit and sleep trigger (still unverified on those devices)
 
 **Upgrading from 0.3.2:** unzip-over (self-healing); no manual steps. A
 `weston_pkg_0.2.squashfs` already in `PortMaster/libs/` is left as is.
@@ -1246,9 +1248,11 @@ daemon that stays alive while a port runs, only handles volume and
 brightness — it has no sleep role. Once a port launches, nothing on-device
 is watching the power button or lid at all, so pressing power does nothing.
 
-**Trigger map (event0).** `gt-sleepmon` (`assets/gt-sleepmon.c`) opens
-`/dev/input/event0` itself — non-grabbing, so keymon keeps reading it too —
-and watches three codes:
+**Trigger map.** `gt-sleepmon` (`assets/gt-sleepmon.c`) opens the input node
+whose `EV_KEY` capability includes `KEY_POWER` (the `axp2202-pek` node —
+event0 on the RG SP; F51 scans for it instead of assuming the index, falling
+back to event0) — non-grabbing, so keymon keeps reading it too — and watches
+three codes:
 
 - `KEY_POWER` (116), **release** (value 0) — suspend
 - `KEY_INSERT` (110, the lid-close hall sensor), **press** (value 1) — suspend
@@ -1257,7 +1261,7 @@ and watches three codes:
 
 Triggering on the power key's *release* (matching `minarch`'s own edge)
 avoids a second trigger firing on the way down. After a suspend/resume
-cycle the watcher swallows event0 for 2s of `CLOCK_BOOTTIME`: the waking
+cycle the watcher swallows the node for 2s of `CLOCK_BOOTTIME`: the waking
 power press arrives here too, and would otherwise instantly re-suspend.
 
 **The suspend-script contract.** On trigger, `gt-sleepmon` `SIGSTOP`s every
@@ -1557,3 +1561,46 @@ and the GUI shows the disclaimer above instead of a cycling control that
 would have nothing to act on. `build/build-pak.sh` carries a guard comment
 next to the F48 resolve block warning against adding a `controller-map.txt`
 transform for these ports for exactly this reason.
+
+## One pak, many h700 devices: the device profile (F51)
+
+Everything in this pak keys on NextUI's `h700` platform, which several
+Anbernic devices share — but four constants were pinned to the RG SP's
+hardware. F51 keys them on NextUI's `$DEVICE` SKU token instead:
+
+- **PortMaster device pin.** `launch.sh` resolves a per-device profile: the
+  harbourmaster device name written to `$HOME/.config/.DEVICE`, plus the
+  panel size exported as `GT_PANEL_W`/`GT_PANEL_H` — on the common path, so
+  the GUI, `run_port`, and everything a port sources (including
+  `device_info.txt`) all inherit it. Two token generations are handled. The
+  current NextUI-h700 build emits family buckets (its launch script maps
+  `RG34xx*`→`rg34xx`, `RG35xx*`→`rg35xx`, `RG40xx*`→`rg40xx`,
+  `RGcubexx`→`cube`, unknown models→`rg40xx`; the RG SP is `rgsp` —
+  device-verified) — each bucket is geometry-uniform, so `rg35xx` →
+  `rg35xx-plus` 640×480, `rg40xx` → `rg40xx-h` 640×480, `cube` → 720×720,
+  `rg34xx` → `rg34xx-h` 720×480. The wiki's exact SKUs are also arms for
+  newer builds: `rg34xxsp` → `rg34xx-sp` 720×480 (the 2.14.0 harbourmaster
+  knows this profile: 2 sticks);
+  `rg35xxh`/`rg35xxplus`/`rg35xxpro`/`rg35xxsp`/`rg40xxh`/`rg40xxv`/`rg28xx`
+  → their 640×480 profiles; `rgcubexx` → nearest profile `rg34xx-h` with
+  true 720×720 panel exports (harbourmaster has no CubeXX profile). An
+  unknown or absent token — including a NextUI build that doesn't export
+  `$DEVICE` — falls back to `rg34xx-h` 720×480, the RG SP profile: exactly
+  the pre-F51 behavior. (RAM is live-detected on both code paths, so profile
+  RAM never matters — both RG34XXSP RAM revisions report correctly.)
+- **Resolution fallback.** `device_info.txt`'s 640×480 fallback (taken when
+  its `sdl_resolution` probe fails) now reads
+  `${GT_PANEL_W:-720}`/`${GT_PANEL_H:-480}`.
+- **Sonic render width (F41).** Computed as `240×W/H` — 360 on 720×480, 320
+  on 640×480 — instead of a literal 360.
+- **Sleep trigger (F47).** `gt-sleepmon` no longer assumes the power key
+  lives on `/dev/input/event0`: it scans `/dev/input` for the node whose
+  `EV_KEY` capability includes `KEY_POWER` (`EVIOCGBIT`, the same discovery
+  pattern as the shim's Menu-device scan), falling back to event0.
+
+Only the RG SP is device-verified; the other arms follow the NextUI-h700
+wiki's token list. Deliberately out of scope: the controller mapping and the
+shim's index table have only ever been measured on the RG SP (stick-equipped
+devices additionally get no stick axes — the measured mapping carries none),
+RG28XX's rotated panel is unaddressed, and the ALSA suspend-proxy chain is a
+copy of the RG SP's stock output chain.

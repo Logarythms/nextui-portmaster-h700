@@ -12,7 +12,10 @@ GT_STAGE_EDIT_ONLY="$work" sh "$ROOT/build/build-pak.sh" portmaster
 
 # marker + content present
 assert_contains "$work/launch.sh" 'gt-h700-sonic-resolution'
-assert_contains "$work/launch.sh" 's/LOW=214/LOW=360/'
+# shellcheck disable=SC2016
+assert_contains "$work/launch.sh" 's/LOW=214/LOW=\$gt_low/'
+# shellcheck disable=SC2016
+assert_contains "$work/launch.sh" 'gt_low=\$(( 240 \* \${GT_PANEL_W:-720} / \${GT_PANEL_H:-480} ))'
 assert_contains "$work/launch.sh" '"Sonic 1.sh"|"Sonic 2.sh")'
 
 # placed INSIDE the F32 mtime window: resolution block after the snapshot touch -r line
@@ -43,10 +46,18 @@ case $(sed --version 2>/dev/null) in
 esac
 block=$(sed -n '/# gt-h700-sonic-resolution:/,/esac/p' "$work/launch.sh")
 mkfake() { printf 'LOW=214 # 3:2\nHIGH=426 # 16:9\n' > "$1"; }
-run_block() { ROM_PATH="$1" PLATFORM="h700"; eval "$block"; }
+run_block() { # $1=launcher [$2=GT_PANEL_W $3=GT_PANEL_H]
+    ( ROM_PATH="$1"; PLATFORM="h700"
+      if [ -n "${2:-}" ]; then GT_PANEL_W="$2"; GT_PANEL_H="$3"; fi
+      eval "$block" )
+}
 mkfake "$SANDBOX/Sonic 1.sh"; run_block "$SANDBOX/Sonic 1.sh"
-assert_contains "$SANDBOX/Sonic 1.sh" 'LOW=360'
-mkfake "$SANDBOX/Other.sh";  run_block "$SANDBOX/Other.sh"
+assert_contains "$SANDBOX/Sonic 1.sh" 'LOW=360'   # no exports = RG SP panel (pre-F51)
+mkfake "$SANDBOX/Sonic 1.sh"; run_block "$SANDBOX/Sonic 1.sh" 640 480
+assert_contains "$SANDBOX/Sonic 1.sh" 'LOW=320'   # F51: 4:3 panel
+mkfake "$SANDBOX/Sonic 2.sh"; run_block "$SANDBOX/Sonic 2.sh" 720 720
+assert_contains "$SANDBOX/Sonic 2.sh" 'LOW=240'   # F51: square panel
+mkfake "$SANDBOX/Other.sh";  run_block "$SANDBOX/Other.sh" 640 480
 assert_contains "$SANDBOX/Other.sh" 'LOW=214'   # untouched
 
 # docs coverage

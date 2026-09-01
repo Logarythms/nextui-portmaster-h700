@@ -26,4 +26,11 @@ out=$("$bin" 2>&1) && rc=0 || rc=$?
 assert_eq "$rc" 0 "gt-sleepmon host trigger-logic test exited nonzero ($rc): $out"
 assert_eq "$out" "sleepmon-test-ok" "unexpected output from the host trigger-logic test"
 
+# F51: the device half must scan for the KEY_POWER node by EVIOCGBIT
+# capability and keep the event0 fallback (the scan itself is device-only —
+# these are static shape checks; the pure bit test is asserted above).
+assert_contains "$ROOT/assets/gt-sleepmon.c" 'EVIOCGBIT(EV_KEY'
+assert_contains "$ROOT/assets/gt-sleepmon.c" 'gt_open_power_device'
+assert_contains "$ROOT/assets/gt-sleepmon.c" '/dev/input/event0'
+
 echo "test-23-sleepmon-host OK"

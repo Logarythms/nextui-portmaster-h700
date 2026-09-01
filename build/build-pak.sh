@@ -139,21 +139,48 @@ edit_portmaster_launch() { # $1=launch.sh path
     ' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
-  # E6: pin the PortMaster device. PortMaster cannot detect NextUI/BaseOS
-  # (devicetree says "sun50iw9", os-release says "Base OS"); rg34xx-h is the
-  # exact profile for this hardware class: h700, 720x480, no analog sticks
-  # (the RG SP is the stickless RG34XXSP successor; RAM is live-detected on
-  # both code paths). $HOME/.config/.DEVICE is read by harbourmaster
-  # hardware.py (~/.config/.DEVICE, expanduser -> the pak-owned $HOME) AND by
-  # the payload device_info.txt at port runtime — one write pins both.
+  # E6/F51: pin the PortMaster device. PortMaster cannot detect NextUI/BaseOS
+  # (devicetree says "sun50iw9", os-release says "Base OS"; harbourmaster's own
+  # sun50iw9 fallback would claim rg35xx-h, 640x480 + 2 sticks — wrong for the
+  # RG SP). $HOME/.config/.DEVICE is read by harbourmaster hardware.py
+  # (~/.config/.DEVICE, expanduser -> the pak-owned $HOME) AND by the payload
+  # device_info.txt at port runtime — one write pins both. F51: the pin is
+  # keyed on NextUI's $DEVICE SKU token so other h700 devices get their own
+  # profile; unknown/absent token = rg34xx-h 720x480 (the RG SP profile, the
+  # exact pre-F51 behavior). The RG SP's token is rgsp (device-verified in
+  # nextui.elf's environ 2026-09-01). NOTE two token generations, both
+  # handled: the current NextUI-h700 build emits FAMILY buckets (its
+  # launch.sh maps RG34xx*->rg34xx, RG35xx*->rg35xx, RG40xx*->rg40xx,
+  # RGcubexx->cube, unknown->rg40xx; each bucket is geometry-uniform), while
+  # the wiki documents exact SKUs (rg34xxsp, rg35xxsp, ...) for newer
+  # builds. GT_PANEL_W/H feed the device_info resolution
+  # fallback and the F41 Sonic width, and sit on the common path so both the
+  # GUI and run_port inherit them. RAM is live-detected on both code paths
+  # (hardware.py sysconf override; device_info free), so profile RAM never
+  # matters. rgcubexx: harbourmaster has no CubeXX profile — nearest h700 pin,
+  # but the panel exports carry the true 720x720. Only the RG SP arm is
+  # device-verified; the rest follow the NextUI-h700 wiki token list.
   if ! grep -q 'gt-h700-device-pin' "$f"; then
     awk '{ print } $0 == "mkdir -p \"$XDG_DATA_HOME\"" {
       print ""
-      print "# gt-h700-device-pin: PortMaster cannot detect NextUI/BaseOS; pin the exact"
-      print "# hardware profile (rg34xx-h: h700, 720x480, no analog sticks)."
+      print "# gt-h700-device-pin: pin the harbourmaster profile + panel size from"
+      print "# NextUI'\''s $DEVICE SKU token (F51); unknown/absent = RG SP profile."
       print "if [ \"$PLATFORM\" = \"h700\" ]; then"
       print "    mkdir -p \"$HOME/.config\""
-      print "    echo rg34xx-h >\"$HOME/.config/.DEVICE\""
+      print "    case \"${DEVICE:-}\" in"
+      print "        rg34xxsp)             gt_pm_device=rg34xx-sp;   GT_PANEL_W=720; GT_PANEL_H=480 ;;"
+      print "        rg35xxh)              gt_pm_device=rg35xx-h;    GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "        rg35xxplus|rg35xxpro) gt_pm_device=rg35xx-plus; GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "        rg35xxsp)             gt_pm_device=rg35xx-sp;   GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "        rg35xx)               gt_pm_device=rg35xx-plus; GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "        rg40xxh|rg40xx)       gt_pm_device=rg40xx-h;    GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "        rg40xxv)              gt_pm_device=rg40xx-v;    GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "        rg28xx)               gt_pm_device=rg28xx;      GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "        rgcubexx|cube)        gt_pm_device=rg34xx-h;    GT_PANEL_W=720; GT_PANEL_H=720 ;;"
+      print "        *)                    gt_pm_device=rg34xx-h;    GT_PANEL_W=720; GT_PANEL_H=480 ;;  # rgsp/rg34xx*/unknown"
+      print "    esac"
+      print "    echo \"$gt_pm_device\" >\"$HOME/.config/.DEVICE\""
+      print "    export GT_PANEL_W GT_PANEL_H"
       print "fi"
     }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
@@ -311,23 +338,27 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
-  # gt-h700-sonic-resolution: F41 — the RSDK Sonic ports set ScreenWidth
+  # gt-h700-sonic-resolution: F41/F51 — the RSDK Sonic ports set ScreenWidth
   # LOW=214 (0.89:1) for a 3:2 display, which renders a narrow vertical strip
-  # with huge side bars on the h700's 720x480. 360 = 240*720/480 fills it. We
-  # rewrite the launcher's LOW value before run_port execs it, INSIDE the F32
-  # mtime window (snapshot just above) so the edit doesn't retrigger a rebuild.
+  # with huge side bars on the h700's 720x480. The filling value is
+  # 240*panel_w/panel_h (360 on the RG SP); F51 computes it from GT_PANEL_W/H
+  # (the launch.sh device profile), defaulting to the RG SP panel. We rewrite
+  # the launcher's LOW value before run_port execs it, INSIDE the F32 mtime
+  # window (snapshot just above) so the edit doesn't retrigger a rebuild.
   # copy_game_scripts reverts the launcher to pristine 214 each PortMaster
-  # session -> this self-heals; the sed is a no-op once it already reads 360.
+  # session -> this self-heals (and re-fits a card moved between devices); the
+  # sed is a no-op once the value is already rewritten.
   if ! grep -q 'gt-h700-sonic-resolution' "$f"; then
     awk '
     $0 == "    touch -r \"$ROM_PATH\" \"$gt_launcher_mtime_ref\"" {
       print
       print ""
-      print "    # gt-h700-sonic-resolution: F41 — fill the 720x480 screen (see docs)"
+      print "    # gt-h700-sonic-resolution: F41/F51 — fill the panel (see docs)"
       print "    case \"${ROM_PATH##*/}\" in"
       print "    \"Sonic 1.sh\"|\"Sonic 2.sh\")"
       print "        if [ \"$PLATFORM\" = \"h700\" ]; then"
-      print "            sed -i \"s/LOW=214/LOW=360/\" \"$ROM_PATH\" 2>/dev/null || true"
+      print "            gt_low=$(( 240 * ${GT_PANEL_W:-720} / ${GT_PANEL_H:-480} ))"
+      print "            sed -i \"s/LOW=214/LOW=$gt_low/\" \"$ROM_PATH\" 2>/dev/null || true"
       print "        fi"
       print "        ;;"
       print "    esac"
@@ -777,7 +808,8 @@ edit_portmaster_launch() { # $1=launch.sh path
   # feature (nextui/minarch watch event0 + hallkey and run bin/suspend; keymon
   # does volume/brightness only), so during a port NOBODY watches the power
   # key or lid. gt-sleepmon (pak bin/) fills that role: KEY_POWER release or
-  # lid-close on event0 -> SIGSTOP the port tree -> stock suspend script ->
+  # lid-close on the power-key node (F51: found by EVIOCGBIT capability scan;
+  # event0 on the RG SP) -> SIGSTOP the port tree -> stock suspend script ->
   # SIGCONT -> 2s event swallow (the waking press would otherwise instantly
   # re-suspend). The ALSA env routes "default" through the pak's
   # suspend-proxy plugin so audio survives (the BSP wedges any PCM open
@@ -1049,12 +1081,15 @@ edit_portmaster_launch() { # $1=launch.sh path
 edit_portmaster_device_info() { # $1=PortMaster/device_info.txt path
   # The payload resolves resolution via its sdl_resolution probe and falls back
   # to 640x480 when the probe fails — wrong panel for the RG SP (720x480,
-  # fb0 mode U:720x480p-59, measured 2026-08-21).
+  # fb0 mode U:720x480p-59, measured 2026-08-21). F51: the fallback now reads
+  # GT_PANEL_W/H (exported by the launch.sh gt-h700-device-pin profile, which
+  # reaches this file via run_port -> port script -> control.txt sourcing it),
+  # defaulting to the RG SP panel when unset — pre-F51 behavior.
   f=$1
   if ! grep -q 'gt-h700-fallback' "$f"; then
     sed -i.bak \
-      -e 's|^    DISPLAY_WIDTH=640$|    DISPLAY_WIDTH=720   # gt-h700-fallback: RG SP panel|' \
-      -e 's|^    DISPLAY_HEIGHT=480$|    DISPLAY_HEIGHT=480  # gt-h700-fallback|' \
+      -e 's|^    DISPLAY_WIDTH=640$|    DISPLAY_WIDTH=${GT_PANEL_W:-720}   # gt-h700-fallback: panel from the launch.sh device profile (F51)|' \
+      -e 's|^    DISPLAY_HEIGHT=480$|    DISPLAY_HEIGHT=${GT_PANEL_H:-480}  # gt-h700-fallback|' \
       "$f"
     rm -f "$f.bak"
   fi
@@ -1398,8 +1433,8 @@ do_portmaster() {
   # E5: power-control stub — upstream binary is tg5040-built and cannot run on
   # h700. This stub is NOT the port-sleep feature: deep sleep during a port is
   # provided separately by gt-sleepmon (F47; see edit_portmaster_launch's
-  # gt-h700-sleepmon splice) watching event0 directly. preflight_checks only
-  # requires minui-power-control to exist; launch.sh backgrounds it, so an
+  # gt-h700-sleepmon splice) watching the power-key node directly.
+  # preflight_checks only requires minui-power-control to exist; launch.sh backgrounds it, so an
   # instant exit 0 here is fine. NOTE: this repackage is h700-only — do not
   # deploy the staged pak to a tg5040.
   cat > "$assembled/bin/minui-power-control" <<'PMEOF'

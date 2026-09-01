@@ -1,8 +1,11 @@
 /* gt-sleepmon.c — F47: sleep watcher for ports on NextUI-h700.
  *
  * Spawned by run_port (see build-pak.sh gt-h700-sleepmon) with one arg:
- * the launch.sh PID (tree root). Watches /dev/input/event0 (axp2202-pek,
- * non-grabbing; keymon reads it too):
+ * the launch.sh PID (tree root). Watches the input node that advertises
+ * KEY_POWER (axp2202-pek — event0 on the RG SP, but enumeration order is
+ * not a contract, so F51 scans /dev/input by EVIOCGBIT capability like the
+ * shim's Menu-device discovery; falls back to event0). Non-grabbing; keymon
+ * reads the same node:
  *   KEY_POWER (116) release  -> suspend
  *   KEY_INSERT (110) press   -> suspend (lid close; hall sensor)
  *   KEY_DELETE (111)         -> ignored (lid open; wake is power-only)
@@ -39,9 +42,17 @@ static int gt_should_trigger(unsigned short code, int value,
     return 0;
 }
 
+/* F51: bit test over an EVIOCGBIT(EV_KEY) keymap buffer. Pure — used by the
+ * power-device scan below and asserted by the GT_SLEEPMON_TEST main. */
+static int gt_keybit_has(const unsigned char *bits, size_t len, unsigned code) {
+    if (code / 8 >= len) return 0;
+    return (bits[code / 8] >> (code % 8)) & 1;
+}
+
 #ifndef GT_SLEEPMON_TEST
 
 #include <dirent.h>
+#include <sys/ioctl.h>
 #include <poll.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -133,6 +144,34 @@ static int gt_run_suspend(void) {
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
+/* F51: open the input node whose EV_KEY capability includes KEY_POWER (the
+ * axp2202 power key; also the lid codes on clamshells — same node on the
+ * RG SP). First match wins; only the PMIC key node carries KEY_POWER here. */
+static int gt_open_power_device(void) {
+    DIR *d = opendir("/dev/input");
+    struct dirent *e;
+    if (!d) return -1;
+    while ((e = readdir(d)) != NULL) {
+        char path[280];   /* "/dev/input/" + dirent d_name (up to 256) */
+        unsigned char bits[(GT_KEY_POWER / 8) + 1];
+        int f;
+        if (strncmp(e->d_name, "event", 5) != 0) continue;
+        snprintf(path, sizeof path, "/dev/input/%s", e->d_name);
+        f = open(path, O_RDONLY | O_NONBLOCK);
+        if (f < 0) continue;
+        memset(bits, 0, sizeof bits);
+        if (ioctl(f, EVIOCGBIT(EV_KEY, sizeof bits), bits) >= 0 &&
+            gt_keybit_has(bits, sizeof bits, GT_KEY_POWER)) {
+            fprintf(stderr, "gt-sleepmon: power key on %s\n", path);
+            closedir(d);
+            return f;
+        }
+        close(f);
+    }
+    closedir(d);
+    return -1;
+}
+
 static void gt_drain_fd(int fd) {
     struct input_event ev;
     while (read(fd, &ev, sizeof ev) == (ssize_t)sizeof ev) ;
@@ -154,8 +193,10 @@ int main(int argc, char **argv) {
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGHUP, &sa, NULL);
 
-    fd = open("/dev/input/event0", O_RDONLY | O_NONBLOCK);
-    if (fd < 0) { perror("gt-sleepmon: /dev/input/event0"); return 1; }
+    fd = gt_open_power_device();
+    if (fd < 0)   /* scan failed (permissions, exotic layout): pre-F51 path */
+        fd = open("/dev/input/event0", O_RDONLY | O_NONBLOCK);
+    if (fd < 0) { perror("gt-sleepmon: no power-key input device"); return 1; }
 
     pfd.fd = fd; pfd.events = POLLIN;
     for (;;) {
@@ -201,6 +242,15 @@ int main(void) {
     /* swallow window suppresses everything, then expires */
     if (gt_should_trigger(GT_KEY_POWER, 0, 100, 200)) return 8;
     if (!gt_should_trigger(GT_KEY_POWER, 0, 201, 200)) return 9;
+    /* F51: EVIOCGBIT keymap bit test used by the power-device scan */
+    {
+        unsigned char bits[15] = {0};            /* 15 bytes = codes 0..119 */
+        bits[GT_KEY_POWER / 8] = (unsigned char)(1u << (GT_KEY_POWER % 8));
+        if (!gt_keybit_has(bits, sizeof bits, GT_KEY_POWER)) return 10;
+        if (gt_keybit_has(bits, sizeof bits, GT_KEY_POWER - 1)) return 11;
+        if (gt_keybit_has(bits, sizeof bits, 120)) return 12;  /* past the buffer */
+        if (gt_keybit_has(bits, 0, GT_KEY_POWER)) return 13;   /* empty buffer */
+    }
     printf("sleepmon-test-ok\n");
     return 0;
 }

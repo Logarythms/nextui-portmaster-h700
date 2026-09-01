@@ -90,6 +90,16 @@ A few ports need capabilities the RG SP's system image doesn't provide (each ver
 
 Details in [`docs/h700-fixes.md`](docs/h700-fixes.md#ports-this-platform-cant-run).
 
+## Other h700 NextUI devices
+
+Only the RG SP is verified. The pak adapts its hardware profile, screen
+geometry, and sleep trigger to the device it runs on (RG34XXSP, the RG35XX
+and RG40XX families), so it *may* work elsewhere — but nobody has tried yet,
+and the button mapping has only ever been measured on the RG SP. On devices
+with analog sticks, expect working buttons at best; stick input is not
+mapped. If you try one, please open an issue with the result, and include
+the `DEVICE INFO` line from `.userdata/h700/logs/PORTS.txt` on your SD card.
+
 ## What works
 
 Gamepad input on this platform has limits, so ports fall into three groups:
