@@ -15,9 +15,11 @@ class BaseScene:
 class OptionScene(BaseScene):
     def __init__(self, gui):
         self.gui = gui
+        self.tags['option_list'].add_option(None, _("Interface"))
         self.tags['option_list'].add_option(
             'toggle-experimental',
             _("Experimental Ports: ") + "x")
+        self.tags['option_list'].add_option(None, _("Audio"))
         self.tags['option_list'].list_select(0)
         self.set_buttons({'A': _('Enter'), 'B': _('Back')})
 
@@ -37,6 +39,18 @@ PY
 python3 "$ROOT/src/gt_patch_optionscene_layout.py" "$fix" || { echo "helper failed"; exit 1; }
 grep -q "'gt-controller-layout-toggle'" "$fix" || { echo "toggle option not added"; exit 1; }
 grep -q "self.gui.hm.cfg_data\['gt-controller-layout'\] = new_layout" "$fix" || { echo "press handler not added"; exit 1; }
+
+# F50 (C): toggle sits under the first "Interface" section, not at the bottom.
+# Assert the add_option for our toggle appears within a few lines AFTER the
+# Interface header and BEFORE the Audio header.
+# NOTE: 'gt-controller-layout-toggle' legitimately appears twice per correct
+# application (the add_option key + the later do_update press-branch
+# comparison), so `t` must latch the FIRST match (the add_option call) —
+# not be overwritten by the second, which sits after do_update's other
+# add_option calls and would falsely fail this placement check.
+awk '/add_option\(None, _\("Interface"\)\)/{i=NR} /gt-controller-layout-toggle/{if (t==0) t=NR} /add_option\(None, _\("Audio"\)\)/{a=NR} END{exit !(i>0 && t>i && (a==0 || t<a))}' "$fix" \
+  || { echo "layout toggle not placed under Interface section"; exit 1; }
+
 python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$fix" || { echo "patched file not valid python"; exit 1; }
 # confined to OptionScene: MainMenuScene must be untouched (its button_activate has no branch after it)
 awk '/class MainMenuScene/,0' "$fix" | grep -q 'gt-controller-layout' && { echo "leaked into MainMenuScene"; exit 1; }

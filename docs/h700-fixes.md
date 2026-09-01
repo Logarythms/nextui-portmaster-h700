@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F48) below match the internal numbering used while these were
+Fix IDs (F1–F50) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. A closing section records the ports
 that this platform genuinely can't run.
@@ -757,6 +757,8 @@ belt-and-braces.
 - F46: dropped the bundled tg5040 Weston runtime image from the pak (−44 MB download and SD footprint) — Weston ports can't display on the RG SP regardless, and the official image stays downloadable on demand
 - F47: ports can now sleep — a watcher daemon suspends the port tree on the power button / lid close, plus an ALSA suspend-proxy so audio survives the resume
 - F48: controller face-button layout (Nintendo vs Xbox A/B/X/Y) is now configurable — a `config.json` key plus a PortMaster GUI toggle drive the SDL gamecontrollerdb, the input-remap shim's synth ports, and OpenCrossing from one resolved value; factory default flips to Nintendo, matching the RG SP's printed labels
+- F49: Cave Story (Evo) now follows the resolved controller layout — its `settings.dat` face-button bindings are conformed on launch, byte-patched and idempotent
+- F50: the controller layout can now be set per game from that port's own info screen in the PortMaster GUI, and the global toggle moved up to be visible without scrolling; self-configuring ports (Balatro-class) show a disclaimer instead, by design
 
 **Upgrading from 0.3.2:** unzip-over (self-healing); no manual steps. A
 `weston_pkg_0.2.squashfs` already in `PortMaster/libs/` is left as is.
@@ -1434,15 +1436,17 @@ so the GUI's own SDL pad matches whatever the toggle last set.
 | gptk/evdev-synth ports | BYTEPATH, Tunics!, Sonic 1/2, Lasagna Boy, Road Invaders, The Starlit Escape | the input-remap shim reads `GT_CONTROLLER_LAYOUT` and swaps `gt_button_slot()`'s a↔b / x↔y output |
 | Custom launcher (evdev) | OpenCrossing / Animal Crossing | the same shim change, via the armhf build (`gt-input-remap.armhf.so`) |
 | GUI confirm/back | PortMaster-GUI itself | two `patch_pylibs` helpers — `gt_patch_platform_layout.py` adds `PlatformTrimUI.loaded()` (drives `WANT_XBOX_FIX`/`WANT_SWAP_BUTTONS` from the config key) and `gt_patch_optionscene_layout.py` adds the "Controller Layout" toggle to `OptionScene` (writes the key, calls `save_config()`) |
-| Per-game stored mapping | Cave Story (Evo) `settings.dat`; LÖVE / `apply_button_map` ports (Balatro, etc.) | not covered — see follow-up below |
+| Per-game stored mapping | Cave Story (Evo) `settings.dat` | covered by F49 — see below |
+| Self-configuring (opaque) | LÖVE / `apply_button_map` ports (Balatro, etc.) | excluded by design — see F50 below |
 
 > The clean-SDL row covers ports that read the shared
 > `SDL_GAMECONTROLLERCONFIG_FILE` we swap. Ports that export their **own**
 > inline `SDL_GAMECONTROLLERCONFIG` — the PortMaster `apply_button_map` /
 > LÖVE-runtime pattern, sourced from a per-game `controller-map.txt` the port
 > writes from its own in-game button setup — override that file, so the swap
-> never reaches them. They belong to the per-game-stored-mapping (follow-up)
-> class alongside Cave Story's `settings.dat`, not the clean-SDL row.
+> never reaches them. They're the self-configuring (opaque) class, excluded
+> by design (F50), not the clean-SDL row — and a different class from Cave
+> Story's `settings.dat`, which F49 now conforms directly.
 
 **Factory-default flip: xbox → nintendo.** The RG SP's face buttons are
 printed with Nintendo labels, so `nintendo` (A = the physically-A/right
@@ -1453,18 +1457,18 @@ install with no key already resolves to the new default. A per-game
 `gt-port-layout` entry lets a specific game stay on the other layout if
 needed.
 
-**Round 1 (this feature) vs follow-up.** Round 1 covers: the global toggle
-in the PortMaster GUI, every port class above except opaque-binary-config
-ports, and per-game overrides via `config.json` (read-only — nothing in
-the GUI writes `gt-port-layout` yet). Follow-up, out of scope here: a
-per-game toggle surfaced in the GUI itself, and the **per-game-stored-mapping**
-ports — Cave-Story-class ports that bind raw joystick button *indices* to game
-actions in an opaque `settings.dat`, plus LÖVE / `apply_button_map` ports
-(Balatro and other runtime ports) that persist their own `controller-map.txt`
-and export it as an inline `SDL_GAMECONTROLLERCONFIG` overriding ours. Both
-persist a per-port map that one system value can't flip; each needs a
-layout-swapped second blob shipped per port, selected by the resolved layout,
-rather than a single conditional.
+**Round 1 (this feature) vs the follow-up round.** Round 1 covered: the
+global toggle in the PortMaster GUI, every port class above except
+opaque-binary-config ports, and per-game overrides via `config.json`
+(read-only — nothing in the GUI wrote `gt-port-layout` yet). The follow-up
+round shipped as **F49** (Cave Story's `settings.dat` now conforms to the
+resolved layout on launch) and **F50** (a per-game toggle in the GUI itself,
+on `PortInfoScene`'s X button, plus a visibility fix for the global toggle) —
+see both below. LÖVE / `apply_button_map` ports (Balatro and similar) stay
+out of scope, not as unfinished work but as an **explicit exclusion**: they
+persist their own `SDL_GAMECONTROLLERCONFIG`, captured from the player's own
+button presses in the port's first-run wizard, which is meant to override
+ours.
 
 **Polarity confirmed on device (RG SP, 2026-09-01).** The *global* polarity
 shipped correct — the shim's a↔b/x↔y swap sense and the GUI's
@@ -1476,3 +1480,80 @@ flip): Sonic 1/2 and Animal Crossing had gptk button conventions authored for
 the pre-F48 static layout, so their `a`/`b` (and, for Animal Crossing, `x`/`y`)
 bindings were swapped to the Nintendo baseline and now let the shim drive the
 layout dynamically.
+
+## Cave Story (Evo): face buttons now follow the resolved layout (F49)
+
+F39 shipped Cave Story (Evo) an RG SP-correct `settings.dat` with a fixed
+JUMP/FIRE binding (JUMP → raw index 4/bottom, FIRE → raw index 3/right — an
+xbox-style pairing). F48 then made the confirm-button layout configurable
+everywhere else, but nxengine-evo reads the **raw SDL joystick** and binds
+actions to button *indices* baked into that file — the same reason F39
+existed in the first place — so neither F48's `gamecontrollerdb.txt` swap
+nor the input-remap shim's a↔b/x↔y translation reaches it. Cave Story stayed
+locked to F39's xbox-style pairing regardless of the resolved layout.
+
+**The fix.** `assets/gt-nxengine-conform-layout.sh` (staged to `files/`)
+byte-patches the two face-button fields directly, using the binding-record
+layout F39 already documented (magic `NXS7`@0, 24-byte records @36, `jbut`
+is field 1 of a record): `JUMP.jbut` at offset 136 (`36 + 4×24 + 4`, JUMP is
+enum index 4) and `FIRE.jbut` at offset 160 (`36 + 5×24 + 4`, FIRE is enum
+index 5).
+
+- `nintendo` → JUMP=3 (right), FIRE=4 (bottom)
+- `xbox` → JUMP=4 (bottom), FIRE=3 (right)
+
+`run_port` runs it immediately after the F48 layout resolves and after F39
+installs the base blob (anchored on `export GT_CONTROLLER_LAYOUT="$gt_layout"`),
+scoped to the `nxengine-evo` GAMEDIR.
+
+Idempotent via a sidecar stamp, `.gt-h700-layout`, next to `settings.dat`:
+relaunching with the same layout is a no-op and leaves the file
+byte-identical. The stamp is written only once both `dd` writes actually
+succeed, so a swallowed write failure (read-only fs, disk full) can't leave
+a stale stamp that skips re-patching on the next launch. The script also
+refuses to touch a file that doesn't start with `NXS7`, and only rewrites
+the two 4-byte `jbut` fields — resolution and every other binding
+(directions, Strafe, weapon switch, Inventory, Map, Esc) are untouched, so a
+player's in-game rebinds survive a same-layout relaunch.
+
+**Factory-default note.** F48's factory default flipped to `nintendo`, but
+F39's shipped blob predates F48 and is xbox-style (JUMP=bottom, FIRE=right).
+A fresh Cave Story install is now conformed to `nintendo` on first launch,
+matching every other port's out-of-the-box layout.
+
+## Per-game controller layout in the GUI, and a more visible global toggle (F50)
+
+F48 shipped a per-game override (`gt-port-layout` in `config.json`), but
+nothing in the GUI wrote it — changing a single game's layout meant hand-
+editing the config file. F50 adds a control to PortMaster's own UI for that,
+and fixes a visibility gap in the global toggle F48 shipped alongside it.
+
+**Per-game control (`src/gt_patch_portinfo_layout.py`).** Adds a control to
+`PortInfoScene` — the screen showing a port's details — on its free **X**
+button:
+
+- For a normal installed port, X cycles Default → Nintendo → Xbox, writing
+  `gt-port-layout["<launcher>.sh"]` in `config.json` (`Default` removes the
+  key; an emptied map is removed entirely). This is the same key F48's
+  resolver already reads at launch, so nothing changes on the read side.
+- For a self-configuring `apply_button_map` port (Balatro-class — see
+  below), X shows a `message_box` disclaimer instead of cycling. This is a
+  cycling-X-button-plus-disclaimer design, not a sub-scene.
+- Gated to installed ports.
+
+**Global toggle visibility.** The "Controller Layout" toggle F48 added to
+`OptionScene` sat at the bottom of the options list. F50 moves it up under
+the first "Interface" section header, so it's visible without scrolling.
+
+**Balatro-class exclusion — by design, not a gap.** Ports using PortMaster's
+`apply_button_map` / `BUTTON_MAP_FILE` pattern (Balatro and similar
+LÖVE-runtime ports) export their **own** inline `SDL_GAMECONTROLLERCONFIG`,
+captured from the player's own button presses in the port's first-run
+wizard. That config deliberately overrides ours — overriding it is the
+whole point of the wizard. These ports are governed by their own captured
+mapping, not the global or per-game layout, and are excluded from
+remapping **by design**: there is no runtime transform to write for them,
+and the GUI shows the disclaimer above instead of a cycling control that
+would have nothing to act on. `build/build-pak.sh` carries a guard comment
+next to the F48 resolve block warning against adding a `controller-map.txt`
+transform for these ports for exactly this reason.

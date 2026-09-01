@@ -20,7 +20,7 @@ nxt = src.find('\nclass ', start + 1)
 end = nxt if nxt >= 0 else len(src)
 block = src[start:end]
 
-add_anchor = "        self.tags['option_list'].list_select(0)\n"
+add_anchor = "        self.tags['option_list'].add_option(None, _(\"Interface\"))\n"
 add_option = (
     "        # gt-h700-controller-layout (F48)\n"
     "        self.tags['option_list'].add_option(\n"
@@ -31,7 +31,7 @@ add_option = (
 if add_anchor not in block:
     sys.stderr.write('gt_patch_optionscene_layout: add anchor not found\n')
     sys.exit(1)
-block = block.replace(add_anchor, add_option + add_anchor, 1)
+block = block.replace(add_anchor, add_anchor + add_option, 1)
 
 press_anchor = "            self.button_activate()\n"
 press_branch = (

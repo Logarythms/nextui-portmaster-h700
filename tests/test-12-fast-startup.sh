@@ -21,9 +21,11 @@
 #     mid-patch re-patches next launch), and a pak upgrade's unzip-over ships a
 #     fresh pylibs.zip so gt_fresh forces a re-patch of the new, unpatched files.
 #     F48 (Tasks 4/5) added two more guarded pylibs patches (the platform-layout
-#     and optionscene-layout gt_patch helpers), so patch_pylibs now makes FOUR
-#     python3 spawns total (2 disable_python_function + 2 F48 helpers), all still
-#     inside the same guard — steady-state per-launch cost is still zero.
+#     and optionscene-layout gt_patch helpers), and F50 added a third (the
+#     portinfo-layout gt_patch helper), so patch_pylibs now makes FIVE
+#     python3 spawns total (2 disable_python_function + 2 F48 helpers + 1 F50
+#     helper), all still inside the same guard — steady-state per-launch cost
+#     is still zero.
 work="$SANDBOX/pmpak"; mkdir -p "$work"
 cp "$TROOT/fixtures/portmaster-pak-skeleton/pak.json.fixture" "$work/pak.json"
 cp "$TROOT/fixtures/portmaster-pak-skeleton/launch.sh.fixture" "$work/launch.sh"
@@ -92,14 +94,14 @@ assert_eq "$(pycount "$pp/cnt")" "0" "steady-state launch spawns no python3"
 rm -rf "$pp/emu"; mkdir -p "$pp/emu/pylibs/harbourmaster"; : > "$pp/emu/pylibs.zip"
 : > "$pp/cnt"
 sh "$pp/runner.sh" "$pp/emu" "$pp/pak" "$pp/cnt" "$pp/patch_pylibs.fn"
-assert_eq "$(pycount "$pp/cnt")" "4" "fresh pylibs re-patches all four guarded pylibs patches"
+assert_eq "$(pycount "$pp/cnt")" "5" "fresh pylibs re-patches all five guarded pylibs patches"
 [ -f "$pp/emu/pylibs/.gt-patched" ] || { echo "marker not created after a fresh patch"; exit 1; }
 
 # scenario C — self-heal: no zip AND no marker (e.g. crash mid-patch) -> re-patch
 rm -rf "$pp/emu"; mkdir -p "$pp/emu/pylibs/harbourmaster"
 : > "$pp/cnt"
 sh "$pp/runner.sh" "$pp/emu" "$pp/pak" "$pp/cnt" "$pp/patch_pylibs.fn"
-assert_eq "$(pycount "$pp/cnt")" "4" "missing marker self-heals (re-patches all four)"
+assert_eq "$(pycount "$pp/cnt")" "5" "missing marker self-heals (re-patches all five)"
 
 # ---------- idempotency: rerunning the build neither re-inserts nor duplicates ----------
 GT_STAGE_EDIT_ONLY="$work" sh "$ROOT/build/build-pak.sh" portmaster

@@ -1,0 +1,48 @@
+{
+  "planPath": "docs/superpowers/plans/2026-09-01-controller-layout-per-game-followups.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: C \u2014 global toggle visibility",
+      "status": "completed",
+      "description": "**Goal:** Move the global \"Controller Layout\" toggle from the bottom of OptionScene to the top, under the first \"Interface\" section, so it's visible without scrolling.\n\n**Files:**\n- Modify: `src/gt_patch_optionscene_layout.py`\n- Test: `tests/test-28-optionscene-layout-patch.sh`\n\n**Acceptance Criteria:**\n- [ ] Toggle inserted after `add_option(None, _(\"Interface\"))`, not before `list_select(0)`.\n- [ ] Helper idempotent and confined to OptionScene.\n- [ ] test-28 asserts placement under Interface; MainMenuScene leak-guard holds.\n- [ ] make test green.\n\n**Verify:** `cd ~/dev/nextui-portmaster-h700 && make test`\n\n```json:metadata\n{\"files\": [\"src/gt_patch_optionscene_layout.py\", \"tests/test-28-optionscene-layout-patch.sh\"], \"verifyCommand\": \"cd ~/dev/nextui-portmaster-h700 && make test\", \"acceptanceCriteria\": [\"Toggle inserted after the Interface header, not before list_select(0)\", \"Helper idempotent and confined to OptionScene\", \"test-28 asserts placement under Interface; MainMenuScene leak-guard holds\", \"make test green\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: B \u2014 Cave Story settings.dat conform",
+      "status": "completed",
+      "blockedBy": [
+        1
+      ],
+      "description": "**Goal:** At launch, swap Cave Story's JUMP/FIRE face-button bindings in the binary settings.dat to match the resolved layout, idempotently (stamp), preserving all other settings.\n\n**Files:**\n- Create: `assets/gt-nxengine-conform-layout.sh`\n- Modify: `build/build-pak.sh`\n- Test: `tests/test-15-nxengine-settings.sh`\n\n**Acceptance Criteria:**\n- [ ] conform writes JUMP.jbut@136 / FIRE.jbut@160 = (3,4) nintendo / (4,3) xbox, only those bytes; size 964; NXS7 intact.\n- [ ] Idempotent on stamp match (byte-identical).\n- [ ] Refuses non-NXS7 file.\n- [ ] build-pak stages helper + injects gt-h700-nxengine-layout block after export GT_CONTROLLER_LAYOUT.\n- [ ] make test green.\n\n**Verify:** `cd ~/dev/nextui-portmaster-h700 && make test`\n\n```json:metadata\n{\"files\": [\"assets/gt-nxengine-conform-layout.sh\", \"build/build-pak.sh\", \"tests/test-15-nxengine-settings.sh\"], \"verifyCommand\": \"cd ~/dev/nextui-portmaster-h700 && make test\", \"acceptanceCriteria\": [\"conform writes JUMP@136/FIRE@160 = (3,4) nintendo / (4,3) xbox, only those bytes, size 964, NXS7 intact\", \"idempotent on stamp match (byte-identical)\", \"refuses non-NXS7 file\", \"build-pak stages helper + injects gt-h700-nxengine-layout block after export GT_CONTROLLER_LAYOUT\", \"make test green\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: A \u2014 per-game layout in the GUI",
+      "status": "completed",
+      "blockedBy": [
+        2
+      ],
+      "description": "**Goal:** Add a per-game layout control to PortInfoScene's free X button: normal port cycles Default -> Nintendo -> Xbox (persisted to gt-port-layout); apply_button_map port shows a disclaimer.\n\n**Files:**\n- Create: `src/gt_patch_portinfo_layout.py`\n- Modify: `build/build-pak.sh`\n- Test: `tests/test-29-portinfo-layout-patch.sh`\n\n**Acceptance Criteria:**\n- [ ] X label + X handler injected into PortInfoScene only.\n- [ ] Cycle writes/clears gt-port-layout for every .sh in items, save_config; Default removes key; empty map removed.\n- [ ] Self-mapping detected via apply_button_map/BUTTON_MAP_FILE -> disclaimer.\n- [ ] Gated to installed ports.\n- [ ] Idempotent, confined to PortInfoScene; test-29 asserts injection + disclaimer.\n- [ ] make test green.\n\n**Verify:** `cd ~/dev/nextui-portmaster-h700 && make test`\n\n```json:metadata\n{\"files\": [\"src/gt_patch_portinfo_layout.py\", \"build/build-pak.sh\", \"tests/test-29-portinfo-layout-patch.sh\"], \"verifyCommand\": \"cd ~/dev/nextui-portmaster-h700 && make test\", \"acceptanceCriteria\": [\"X label + X handler injected into PortInfoScene only\", \"cycle writes/clears gt-port-layout for every .sh in items, save_config; Default removes key; empty map removed\", \"self-mapping detected via apply_button_map/BUTTON_MAP_FILE -> disclaimer\", \"gated to installed ports\", \"idempotent, confined to PortInfoScene; test-29 asserts injection + disclaimer\", \"make test green\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Docs \u2014 F49/F50 + Balatro exclusion",
+      "status": "completed",
+      "blockedBy": [
+        3
+      ],
+      "description": "**Goal:** Document the round, make the Balatro-class exclusion explicit (docs + guard comment), update changelog + README.\n\n**Files:**\n- Modify: `docs/h700-fixes.md`\n- Modify: `build/build-pak.sh`\n- Modify: `README.md`\n\n**Acceptance Criteria:**\n- [ ] h700-fixes.md has F49 + F50 sections + explicit \"apply_button_map ports governed by their own in-port config \u2014 excluded by design\" note.\n- [ ] build-pak guard comment against a controller-map.txt transform for apply_button_map ports.\n- [ ] README notes per-game layout + Cave Story layout-awareness.\n- [ ] make test green.\n\n**Verify:** `cd ~/dev/nextui-portmaster-h700 && make test`\n\n```json:metadata\n{\"files\": [\"docs/h700-fixes.md\", \"build/build-pak.sh\", \"README.md\"], \"verifyCommand\": \"cd ~/dev/nextui-portmaster-h700 && make test\", \"acceptanceCriteria\": [\"h700-fixes.md has F49+F50 sections + explicit Balatro-class exclusion note\", \"build-pak guard comment against controller-map.txt transform for apply_button_map ports\", \"README notes per-game layout + Cave Story layout-awareness\", \"make test green\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Device gate on the RG SP",
+      "status": "completed",
+      "blockedBy": [
+        4
+      ],
+      "description": "**Goal:** Build the pak, install on the RG SP, and confirm all three pieces work on-device before merge \u2014 with regressions checked.\n\n**USER-ORDERED GATE \u2014 NON-SKIPPABLE.** Requested by the user in the current conversation. MUST NOT be closed by walking around it, declaring it \"verified inline\", or substituting a cheaper check. Close only after every acceptanceCriteria item is re-validated independently with output captured.\n\n**Files:** none (build + on-device verification)\n\n**Acceptance Criteria:**\n- [ ] make pak builds clean (dangerouslyDisableSandbox), installed via unzip-over.\n- [ ] A: per-game Nintendo/Xbox/Default each behave correctly; config.json gt-port-layout updated.\n- [ ] A disclaimer shows on Balatro X.\n- [ ] B: Cave Story jump/fire swap on layout flip; no-op relaunch preserves resolution + a rebind.\n- [ ] C: global toggle visible without scrolling.\n- [ ] Regression: Celeste + Tunics!/Sonic still switch; five covered ports unaffected.\n\n**Verify:** On-device (`ssh root@10.0.1.16`); capture config.json diff, Cave Story settings.dat bytes @136/160, observed A/B behavior. Report in ledger.\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"cd ~/dev/nextui-portmaster-h700 && make pak  # then ssh root@10.0.1.16 install + on-device checks\", \"acceptanceCriteria\": [\"make pak clean + installed via unzip-over\", \"A: per-game Nintendo/Xbox/Default each behave correctly; config.json gt-port-layout updated\", \"A disclaimer shows on Balatro X\", \"B: Cave Story jump/fire swap on layout flip; no-op relaunch preserves resolution + a rebind\", \"C: global toggle visible without scrolling\", \"Regression: Celeste + Tunics!/Sonic still switch; five covered ports unaffected\"], \"verifyLayouts\": [\"nintendo\", \"xbox\"], \"requireEvidenceTokens\": [[\"nintendo\", \"default\"], [\"xbox\"]], \"userGate\": true, \"requiresUserSpecification\": false, \"gateScope\": \"all\", \"tags\": [\"user-gate\"], \"modelTier\": \"standard\"}\n```"
+    }
+  ],
+  "lastUpdated": "2026-09-01T14:05:36Z"
+}

@@ -81,3 +81,58 @@ PY
 GT_STAGE_EDIT_ONLY="$work" sh "$ROOT/build/build-pak.sh" portmaster
 assert_eq "$(grep -c 'gt_nxe_src=' "$work/launch.sh")" "1" "install hook inserted exactly once"
 sh -n "$work/launch.sh" || { echo "edited launch.sh does not parse after rerun"; exit 1; }
+
+# --- F49: layout-conform (byte-patch JUMP/FIRE, idempotent) ---
+conform="$ROOT/assets/gt-nxengine-conform-layout.sh"
+[ -x "$conform" ] || { echo "conform helper missing/not executable"; exit 1; }
+tmp=$(mktemp -d)
+cp "$ROOT/assets/nxengine-evo-h700-settings.dat" "$tmp/settings.dat"
+
+byte_at() { dd if="$1" bs=1 skip="$2" count=1 2>/dev/null | od -An -tu1 | tr -d ' '; }
+
+"$conform" "$tmp/settings.dat" nintendo
+[ "$(byte_at "$tmp/settings.dat" 136)" = "3" ] || { echo "nintendo JUMP.jbut != 3"; exit 1; }
+[ "$(byte_at "$tmp/settings.dat" 160)" = "4" ] || { echo "nintendo FIRE.jbut != 4"; exit 1; }
+[ "$(wc -c < "$tmp/settings.dat")" -eq 964 ] || { echo "size changed"; exit 1; }
+[ "$(dd if="$tmp/settings.dat" bs=1 count=4 2>/dev/null)" = "NXS7" ] || { echo "magic clobbered"; exit 1; }
+
+"$conform" "$tmp/settings.dat" xbox
+[ "$(byte_at "$tmp/settings.dat" 136)" = "4" ] || { echo "xbox JUMP.jbut != 4"; exit 1; }
+[ "$(byte_at "$tmp/settings.dat" 160)" = "3" ] || { echo "xbox FIRE.jbut != 3"; exit 1; }
+
+# Idempotency: the stamp must actually GATE the write, not merely happen to
+# reproduce the same bytes (re-running conform with a layout that's already
+# in place would look byte-identical even with the stamp check deleted).
+# Simulate a player's in-game rebind (mutate JUMP.jbut to a sentinel) right
+# after a conform, then rerun conform with the SAME layout — a working stamp
+# short-circuits and must leave the rebind untouched.
+printf '\143\000\000\000' | dd of="$tmp/settings.dat" bs=1 seek=136 conv=notrunc 2>/dev/null  # sentinel=99
+[ "$(byte_at "$tmp/settings.dat" 136)" = "99" ] || { echo "setup: sentinel write failed"; exit 1; }
+"$conform" "$tmp/settings.dat" xbox
+[ "$(byte_at "$tmp/settings.dat" 136)" = "99" ] || { echo "stamp did not gate the write: in-game rebind was clobbered"; exit 1; }
+
+# Non-NXS7 file untouched.
+printf 'JUNKdata' > "$tmp/junk"; cp "$tmp/junk" "$tmp/junk.bak"
+"$conform" "$tmp/junk" nintendo
+cmp -s "$tmp/junk" "$tmp/junk.bak" || { echo "conform touched non-NXS7 file"; exit 1; }
+
+# Wrong-size file (even with the correct NXS7 magic) must be a no-op: the
+# @136/@160 offsets are meaningless on a truncated file and conv=notrunc
+# would zero-extend it into a corrupt 964-byte file. Refuse instead. Uses its
+# own directory since the stamp path is dirname($f)/.gt-h700-layout, and
+# $tmp already holds a stamp from the earlier settings.dat conform calls.
+mkdir -p "$tmp/shortdir"
+printf 'NXS7short' > "$tmp/shortdir/settings.dat"; cp "$tmp/shortdir/settings.dat" "$tmp/shortdir/settings.dat.bak"
+"$conform" "$tmp/shortdir/settings.dat" nintendo
+cmp -s "$tmp/shortdir/settings.dat" "$tmp/shortdir/settings.dat.bak" || { echo "conform touched wrong-size NXS7 file"; exit 1; }
+[ -f "$tmp/shortdir/.gt-h700-layout" ] && { echo "conform stamped a wrong-size file"; exit 1; }
+rm -rf "$tmp"
+
+# F49: helper staged + injector wired into the staged launch.sh.
+assert_contains "$work/launch.sh" 'gt-h700-nxengine-layout (F49)'
+assert_contains "$work/launch.sh" 'files/gt-nxengine-conform-layout.sh'
+# $work/launch.sh has already been through a second GT_STAGE_EDIT_ONLY pass
+# (the F39 idempotency rerun above) — verify that pass did not double-insert
+# the F49 block (a bare assert_contains/grep -q would pass either way).
+n_nxlayout=$(grep -c 'gt-h700-nxengine-layout' "$work/launch.sh")
+assert_eq "$n_nxlayout" "1" "nxengine layout injector inserted more than once"

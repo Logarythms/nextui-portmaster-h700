@@ -951,6 +951,12 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # NOTE (F49): do NOT add a controller-map.txt transform for apply_button_map
+  # ports (Balatro-class). Those ports export their own inline
+  # SDL_GAMECONTROLLERCONFIG captured by the user in the port's first-run wizard;
+  # it deliberately overrides our layout. The GUI (F50) shows a disclaimer for
+  # them instead. See docs/h700-fixes.md (Balatro-class exclusion).
+
   # gt-h700-controller-layout: F48 — replace the upstream nintendo/xbox pick
   # (a single global "nintendo*" marker file) with the config.json resolver:
   # per-game > global > legacy marker > nintendo. Also export GT_CONTROLLER_LAYOUT
@@ -1006,6 +1012,35 @@ edit_portmaster_launch() { # $1=launch.sh path
       print "    python3 \"$PAK_DIR/src/gt_patch_optionscene_layout.py\" \\"
       print "        \"$EMU_DIR/pylibs/pugscene.py\""
     }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-portinfo-layout: F50 — per-game controller-layout control on
+  # PortInfoScene's free X button (cycles Default -> Nintendo -> Xbox, writing
+  # gt-port-layout); apply_button_map/BUTTON_MAP_FILE ports (e.g. Balatro) get
+  # a disclaimer instead since they manage their own mapping.
+  if ! grep -q 'gt-h700-portinfo-layout' "$f"; then
+    awk '{ print } $0 == "        \"$EMU_DIR/pylibs/harbourmaster/platform.py\" portmaster_install" {
+      print "    # gt-h700-portinfo-layout (F50): per-game layout control + disclaimer"
+      print "    python3 \"$PAK_DIR/src/gt_patch_portinfo_layout.py\" \\"
+      print "        \"$EMU_DIR/pylibs/pugscene.py\""
+    }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-nxengine-layout: F49 — after the layout resolves, conform Cave Story's
+  # JUMP/FIRE face-button bindings in settings.dat to $gt_layout (idempotent via a
+  # stamp; preserves resolution + in-game rebinds). Runs after F39 installed the
+  # base blob. Scoped to the nxengine-evo GAMEDIR; off the shim remap list.
+  if ! grep -q 'gt-h700-nxengine-layout' "$f"; then
+    awk '$0 == "    export GT_CONTROLLER_LAYOUT=\"$gt_layout\"" {
+      print $0
+      print "    # gt-h700-nxengine-layout (F49): conform Cave Story JUMP/FIRE to $gt_layout"
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && [ \"${GAMEDIR##*/}\" = \"nxengine-evo\" ] \\"
+      print "        && [ -f \"$GAMEDIR/conf/nxengine/settings.dat\" ]; then"
+      print "        \"$PAK_DIR/files/gt-nxengine-conform-layout.sh\" \"$GAMEDIR/conf/nxengine/settings.dat\" \"$gt_layout\""
+      print "    fi"
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
   rm -f "$f.bak"
@@ -1331,6 +1366,10 @@ do_portmaster() {
   cp -f "$ASSETS/gt-controller-layout.sh" "$assembled/files/gt-controller-layout.sh"
   chmod +x "$assembled/files/gt-controller-layout.sh"
 
+  # F49: stage the nxengine-evo (Cave Story) settings.dat layout-conform helper.
+  cp -f "$ASSETS/gt-nxengine-conform-layout.sh" "$assembled/files/gt-nxengine-conform-layout.sh"
+  chmod +x "$assembled/files/gt-nxengine-conform-layout.sh"
+
   # F48: stage the GUI PlatformTrimUI patch helper that patch_pylibs invokes.
   # $assembled/src/ already exists from the upstream ports-pak.zip extraction
   # (it ships disable_python_function.py); mkdir -p is defensive.
@@ -1339,6 +1378,9 @@ do_portmaster() {
 
   # F48: stage the OptionScene layout-toggle patch helper that patch_pylibs invokes.
   cp "$ROOT/src/gt_patch_optionscene_layout.py" "$assembled/src/gt_patch_optionscene_layout.py"
+
+  # F50: stage the PortInfoScene per-game layout patch helper that patch_pylibs invokes.
+  cp "$ROOT/src/gt_patch_portinfo_layout.py" "$assembled/src/gt_patch_portinfo_layout.py"
 
   strip_weston_runtime "$assembled"
 

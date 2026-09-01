@@ -34,15 +34,20 @@ fi
 if grep -q 'set_controller_layout xbox' "$work/launch.sh"; then
     echo "leftover hardcoded xbox"; exit 1
 fi
+# 7. F50: per-game layout control on PortInfoScene is wired on the same rail.
+assert_contains "$work/launch.sh" 'gt-h700-portinfo-layout (F50)'
+assert_contains "$work/launch.sh" 'gt_patch_portinfo_layout.py'
 sh -n "$work/launch.sh" || { echo "edited launch.sh does not parse"; exit 1; }
 
-# 7. idempotency: a second edit pass must not double-insert either block and
+# 8. idempotency: a second edit pass must not double-insert either block and
 #    the file must still parse
 GT_STAGE_EDIT_ONLY="$work" sh "$ROOT/build/build-pak.sh" portmaster
 n=$(grep -c 'gt-h700-controller-layout (F48): resolve' "$work/launch.sh")
 assert_eq "$n" "1" "resolver block inserted more than once"
 n_gui=$(grep -c 'gt-h700-controller-layout-gui (F48)' "$work/launch.sh")
 assert_eq "$n_gui" "1" "GUI block inserted more than once"
+n_portinfo=$(grep -c 'gt-h700-portinfo-layout (F50)' "$work/launch.sh")
+assert_eq "$n_portinfo" "1" "PortInfoScene layout block inserted more than once"
 sh -n "$work/launch.sh" || { echo "edited launch.sh does not parse after rerun"; exit 1; }
 
 echo "test-25-controller-layout-inject OK"

@@ -37,8 +37,8 @@ Unzip the new `PORTS.pak.zip` over the SD card the same way you installed it, re
 - **PortMaster's self-update is disabled by this build.** Updating would replace the h700-patched runtime with the official one, which won't run on the RG SP — so the update prompt never appears, and even a manually triggered update is a no-op. New pak versions come as releases of this repository instead.
 - **Buttons default to the Nintendo layout** (A / B / X / Y match the
   printed labels). Changeable globally from PortMaster's own **Options**
-  menu, or per game — see [docs/h700-fixes.md](docs/h700-fixes.md) for the
-  per-game config.
+  menu, or per game from that port's own info screen (press **X**) — see
+  [docs/h700-fixes.md](docs/h700-fixes.md) for details.
 - **Tap Menu once during a game to show a battery/time/volume/brightness
   overlay; tap it again to hide it.** Holding Menu to adjust brightness
   still works as before. A couple of ports are exceptions — see
@@ -58,7 +58,7 @@ Confirmed working out of the box on the RG SP:
 - [Apotris](https://portmaster.games/detail.html?name=apotris)
 - [Balatro](https://portmaster.games/detail.html?name=balatro)
 - [BYTEPATH](https://portmaster.games/detail.html?name=bytepath) (via the built-in input translator — automatic)
-- [Cave Story (Evo)](https://portmaster.games/detail.html?name=cave.story-evo) (the *Evo* version — **not** "Cave Story lr", which can't run here; its controls and screen fit are corrected for the RG SP automatically — see below)
+- [Cave Story (Evo)](https://portmaster.games/detail.html?name=cave.story-evo) (the *Evo* version — **not** "Cave Story lr", which can't run here; its controls and screen fit are corrected for the RG SP automatically, and its face buttons follow your chosen controller layout — see below)
 - [Celeste](https://portmaster.games/detail.html?name=celeste)
 - [Deltarune](https://portmaster.games/detail.html?name=deltarune)
 - [Downwell](https://portmaster.games/detail.html?name=downwell)
