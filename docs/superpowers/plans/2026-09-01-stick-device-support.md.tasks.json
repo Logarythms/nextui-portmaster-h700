@@ -1,0 +1,89 @@
+{
+  "planPath": "docs/superpowers/plans/2026-09-01-stick-device-support.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: Input-device fixtures + input-class detection (F52)",
+      "status": "completed",
+      "description": "**Goal:** launch.sh exports `GT_INPUT_CLASS=plain|sticks` from the `js0` node's key bitmap (fail-safe `plain` + warning), logs a breadcrumb, and test-03 proves it against real fixtures. Plan Task 1 has the full code. Spec §4.1.\n\n**Files:**\n- Create: `tests/fixtures/input-devices/rgsp.txt`, `rg34xxsp.txt`, `unknown.txt` (verbatim from spec Appendix A; keep the trailing space after `Handlers=` values)\n- Modify: `build/build-pak.sh:141-186` (`gt-h700-device-pin` awk in `edit_portmaster_launch`; detection between `mkdir -p \"$HOME/.config\"` and the `case`)\n- Modify: `tests/test-03-device.sh:31-60` (`run_pin DEVICE MODEL FIXTURE` + `run_class` asserts)\n\n**Acceptance Criteria:**\n- [ ] RG SP fixture -> plain, breadcrumb `gt-h700: input class plain (js0 key word dff000000000000)`, no warning\n- [ ] RG34XXSP fixture -> sticks, breadcrumb with `1fff000000000000`\n- [ ] unknown-word fixture -> plain + warning `unrecognized joystick key set [1ffe000000000000]`; missing file -> `[none]`\n- [ ] block stays after `mkdir -p \"$XDG_DATA_HOME\"`; `$1` untouched (no `set --`); `sh -n` passes; one marker after restage\n- [ ] all pre-existing test-03 profile assertions still pass\n\n**Verify:** `make test` -> `=== test-03-device.sh ===` with no `assert_` output; ends `ALL TESTS PASSED`\n\n```json:metadata\n{\"files\": [\"tests/fixtures/input-devices/rgsp.txt\", \"tests/fixtures/input-devices/rg34xxsp.txt\", \"tests/fixtures/input-devices/unknown.txt\", \"build/build-pak.sh\", \"tests/test-03-device.sh\"], \"verifyCommand\": \"make test\", \"acceptanceCriteria\": [\"plain on RG SP fixture with breadcrumb, no warning\", \"sticks on RG34XXSP fixture\", \"unknown word and missing file -> plain + warning\", \"$1 intact, sh -n passes, marker idempotent\", \"existing test-03 asserts pass\"], \"modelTier\": \"standard\", \"wave\": 1}\n```",
+      "lastUpdated": "2026-09-01T20:49:17.567171+00:00"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Per-class controller DB + set_controller_layout suffix (F52)",
+      "status": "completed",
+      "description": "**Goal:** Four staged DB files; `set_controller_layout` installs the `_sticks` copy when `GT_INPUT_CLASS=sticks`; plain files byte-identical to before. Plan Task 2 has the asset text, `stage_controllerdb_classes`, the awk edit and the tests. Spec §4.2.\n\n**Files:**\n- Create: `assets/gamecontrollerdb-h700-sticks-nintendo.txt`, `assets/gamecontrollerdb-h700-sticks-xbox.txt`\n- Modify: `build/build-pak.sh` (`stage_controllerdb_classes()` after `append_controllerdb()` ~1183; replace the GT_STAGE_EDIT_ONLY appends ~1208-1214 and assembly appends ~1397-1398; `gt-h700-controller-db-class` awk in `edit_portmaster_launch` after the F48 gui block)\n- Modify: `tests/test-03-device.sh` (stick mapping fixtures GUID 190000005354494b530000000000000a, staging asserts, `run_layout`, idempotency)\n\n**Acceptance Criteria:**\n- [ ] assets carry the exact stick line (nintendo a:b3,b:b4,x:b6,y:b5 / xbox a:b4,b:b3,x:b5,y:b6; lefttrigger:b13,righttrigger:b14,leftstick:b12,rightstick:b15,leftx:a0,lefty:a1,rightx:a2,righty:a3)\n- [ ] `_sticks` copies forked from the PRISTINE upstream copy before the plain append; contain the stick line, not the plain line; plain files contain no stick line\n- [ ] restage: one data line per GUID in each of the 4 files; marker count 1\n- [ ] extracted `set_controller_layout` copies `_sticks` under sticks, plain under plain/absent; `sh -n` passes\n\n**Verify:** `sh tests/test-03-device.sh && make test` -> `ALL TESTS PASSED`\n\n```json:metadata\n{\"files\": [\"assets/gamecontrollerdb-h700-sticks-nintendo.txt\", \"assets/gamecontrollerdb-h700-sticks-xbox.txt\", \"build/build-pak.sh\", \"tests/test-03-device.sh\"], \"verifyCommand\": \"make test\", \"acceptanceCriteria\": [\"assets carry the measured stick line\", \"4 staged files, stick copies forked pristine, GUID-deduped\", \"set_controller_layout class-keyed copy\", \"plain unchanged\"], \"modelTier\": \"mechanical\", \"wave\": 1}\n```",
+      "blockedBy": [
+        1
+      ],
+      "lastUpdated": "2026-09-01T21:14:49.053890+00:00"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Shim class-aware tables, Menu echo, direct evdev slots, l3/r3 (F52)",
+      "status": "completed",
+      "description": "**Goal:** `gt-input-remap.so` honors `GT_INPUT_CLASS`: stick table 12->9/13->10/14->11/15->12, park 0-2 & 16 at 17; HUD swallows raw 16 (not 14) on sticks; F45 evdev path maps code->slot directly; gptk `l3`/`r3` = slots 9/12. Plain identical. Plan Task 3 has all the C. Spec §4.3.\n\n**Files:**\n- Modify: `assets/gt-input-remap.c` (~72 gt_remap -> gt_sticks_class/gt_class_load/GT_PARK_PLAIN/GT_PARK_STICKS/gt_remap_plain/gt_remap_sticks/gt_menu_echo_index; ~149 gt_button_slot l3/r3; ~176 gt_evdev_code_sdl_index -> gt_evdev_code_slot; ~594 gt_menu_swallow; ~1062 evdev thread; ~1147 gt_init; test main)\n- Modify: `tests/test-05-input-remap.sh:3-15` (header comment)\n- Rebuild: `assets/gt-input-remap.so`, `assets/gt-input-remap.armhf.so` (`make shim`; network + docker; sandbox off; `file` both)\n\n**Acceptance Criteria:**\n- [ ] host test `remap ok`: plain cases unchanged; stick table raw 0..18 incl. park 17; swallow 11+16 on sticks, 14 NOT swallowed; gt_class_load sticks/plain/absent; gt_evdev_code_slot incl. 313->9, 316->12, non-gameplay -1; direct slot == two-step on both tables; l3->9/r3->12 via gt_button_slot and parsed `l3 = q`\n- [ ] `grep -c gt_evdev_code_sdl_index assets/gt-input-remap.c` -> 0\n- [ ] `file` .so -> ELF 64-bit ARM aarch64; .armhf.so -> ELF 32-bit ARM EABI5\n- [ ] `make test` -> ALL TESTS PASSED\n\n**Verify:** `cc -DGT_REMAP_TEST -O2 -Wall -o /tmp/remap-test assets/gt-input-remap.c && /tmp/remap-test` -> `remap ok`; `make test`; `file assets/gt-input-remap.so assets/gt-input-remap.armhf.so`\n\n```json:metadata\n{\"files\": [\"assets/gt-input-remap.c\", \"tests/test-05-input-remap.sh\", \"assets/gt-input-remap.so\", \"assets/gt-input-remap.armhf.so\"], \"verifyCommand\": \"make test\", \"acceptanceCriteria\": [\"stick table + park 17\", \"class-aware Menu-echo swallow\", \"direct evdev code->slot, consistent with both tables\", \"l3/r3 slots 9/12\", \"plain unchanged\", \"both .so rebuilt, arch verified\"], \"modelTier\": \"standard\", \"wave\": 1}\n```",
+      "lastUpdated": "2026-09-01T21:39:15.341466+00:00"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: use-input-debug flag -> shim trace for every port (F52)",
+      "status": "completed",
+      "description": "**Goal:** Touching `$USERDATA_PATH/PORTS-portmaster/use-input-debug` exports `GT_INPUT_REMAP_DEBUG=1` for every port launch so a report carries the shim's full trace. Plan Task 4. Spec §4.6.\n\n**Files:**\n- Modify: `build/build-pak.sh:660-664` (`gt-h700-port-remap` awk: two prints right after the `export LD_PRELOAD=` print)\n- Modify: `tests/test-05-input-remap.sh` (asserts after the existing `[ \"$gate\" -lt \"$ir\" ]` line)\n\n**Acceptance Criteria:**\n- [ ] launch.sh contains `gt-h700-input-debug` and `[ -f \"$USERDATA_PATH/PORTS-portmaster/use-input-debug\" ] && export GT_INPUT_REMAP_DEBUG=1`\n- [ ] placed after the LD_PRELOAD export, before the remap allowlist gate\n- [ ] `sh -n` passes; marker count 1 after restage\n\n**Verify:** `sh tests/test-05-input-remap.sh` -> no output; `make test` -> `ALL TESTS PASSED`\n\n```json:metadata\n{\"files\": [\"build/build-pak.sh\", \"tests/test-05-input-remap.sh\"], \"verifyCommand\": \"sh tests/test-05-input-remap.sh && make test\", \"acceptanceCriteria\": [\"flag file exports GT_INPUT_REMAP_DEBUG=1 in the universal preload block\", \"placed after LD_PRELOAD, before the remap gate\", \"idempotent\"], \"modelTier\": \"mechanical\", \"wave\": 1}\n```",
+      "lastUpdated": "2026-09-01T21:51:46.289700+00:00"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Shim analog-to-key synthesis, gptokeyb parity (F53)",
+      "status": "completed",
+      "description": "**Goal:** On stick-class devices with a gptk loaded, stick deflections synthesize the gptk's `left_analog_*`/`right_analog_*` keys (gptokeyb defaults when unnamed; `deadzone` 1..32767 honored, default 15000; mouse sticks skipped), edge-tracked via `gt_evdev_hat_edges`, first key replacing the axis event, rest stashed, mirrored into the polled keystate. Plan Task 5 has all the C. Spec §4.4.\n\n**Files:**\n- Modify: `assets/gt-input-remap.c` (gt_keyname home 74/end 77; gt_keymap += analog_key[2][4], analog_mouse[2], deadzone; gt_keymap_defaults, gt_analog_name (after gt_dir_slot), gt_axis_dir, gt_axis_slots (after gt_evdev_hat_edges); gt_gptk_line analog + deadzone branches; gt_init calls gt_keymap_defaults before parsing; static int gt_axis_prev[4]; SDL_JOYAXISMOTION branch in gt_rewrite after the hat branch; test main updates)\n- Rebuild: `assets/gt-input-remap.so`, `assets/gt-input-remap.armhf.so`\n\n**Acceptance Criteria:**\n- [ ] host test `remap ok`: home/end; defaults left w/s/a/d, right end/home/left/right, deadzone 15000, defaults alone don't set loaded; present line overrides; `\\\"` and unknown clear; mouse_movement_* sets analog_mouse + clears; deadzone 1/32767/20000 accepted, 0/99999/abc rejected; deadzone_x and _repeat ignored; gt_axis_dir at 14999/15000/-15000/27935/-32768/0 and dz=1; gt_axis_slots axes 0-3; center->up->down->center edges\n- [ ] gt_rewrite axis branch gated on gt_map.loaded && gt_sticks_class && axis < 4; mouse stick passes through; first key replaces / rest stashed; debug line on direction change\n- [ ] both .so rebuilt, arch verified; `make test` green\n\n**Verify:** `cc -DGT_REMAP_TEST -O2 -Wall -o /tmp/remap-test assets/gt-input-remap.c && /tmp/remap-test` -> `remap ok`; `make test` -> `ALL TESTS PASSED`; `file` both .so\n\n```json:metadata\n{\"files\": [\"assets/gt-input-remap.c\", \"assets/gt-input-remap.so\", \"assets/gt-input-remap.armhf.so\"], \"verifyCommand\": \"cc -DGT_REMAP_TEST -O2 -Wall -o /tmp/remap-test assets/gt-input-remap.c && /tmp/remap-test && make test\", \"acceptanceCriteria\": [\"gptokeyb-parity parser with defaults, clear, mouse stick, deadzone range\", \"gt_axis_dir / gt_axis_slots semantics\", \"edge emission release-before-press\", \"gated on sticks class + loaded gptk\", \"keystate mirrored\", \"both .so rebuilt\"], \"modelTier\": \"standard\", \"wave\": 2}\n```",
+      "blockedBy": [
+        3
+      ],
+      "lastUpdated": "2026-09-01T22:30:45.760617+00:00"
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Profile pin refinement + use-stickless hatch (F53)",
+      "status": "completed",
+      "description": "**Goal:** F51 pin tries lowercased `RGXX_MODEL` first, then the `DEVICE` bucket, then the default; `GT_INPUT_CLASS=sticks` upgrades ambiguous buckets (rg34xx->rg34xx-sp, rg35xx->rg35xx-h, unknown->rg34xx-sp; exact SKUs never overridden); `use-stickless` exports `GT_ANALOG_STICKS=0`, applied by device_info right before `export ANALOG_STICKS`. Plan Task 6 has the awk prints and tests. Spec §4.5.\n\n**Files:**\n- Modify: `build/build-pak.sh` (`gt-h700-device-pin` awk: replace the `case \"${DEVICE:-}\"` prints with the model->bucket loop, default, class refinement, hatch export; `edit_portmaster_device_info`: `gt-h700-stickless` awk insert anchored on `export ANALOG_STICKS`)\n- Modify: `tests/test-03-device.sh` (model/bucket/refinement asserts, `run_hatch`, device_info override asserts, idempotency)\n\n**Acceptance Criteria:**\n- [ ] run_pin rg34xx RG34xxSP -> rg34xx-sp 720 480; rg34xx RGSP -> rg34xx-h; rg35xx RG35xx2024 -> rg35xx-plus; rg40xx RG40xxV -> rg40xx-v\n- [ ] rg34xxsp fixture: rg34xx->rg34xx-sp, rg35xx->rg35xx-h, ''->rg34xx-sp 720 480, rgsp->rg34xx-h, rg40xx->rg40xx-h; rgsp fixture: rg34xx->rg34xx-h\n- [ ] every pre-existing run_pin assertion unchanged\n- [ ] use-stickless present -> GT_ANALOG_STICKS=0 + log line; absent -> unset\n- [ ] device_info: gt-h700-stickless line immediately before `export ANALOG_STICKS`; override 2->0 with env, 2 without; marker count 1\n\n**Verify:** `sh tests/test-03-device.sh && make test` -> `ALL TESTS PASSED`\n\n```json:metadata\n{\"files\": [\"build/build-pak.sh\", \"tests/test-03-device.sh\"], \"verifyCommand\": \"sh tests/test-03-device.sh && make test\", \"acceptanceCriteria\": [\"RGXX_MODEL first, bucket second, default last\", \"class refines only ambiguous buckets\", \"existing pins unchanged\", \"use-stickless exports GT_ANALOG_STICKS=0\", \"device_info override before export ANALOG_STICKS, idempotent\"], \"modelTier\": \"standard\", \"wave\": 2}\n```",
+      "blockedBy": [
+        1,
+        5
+      ],
+      "lastUpdated": "2026-09-01T22:49:15.607687+00:00"
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: Docs - README, h700-fixes F52/F53, shim header (F52/F53)",
+      "status": "completed",
+      "description": "**Goal:** Users and maintainers can read what stick support does, that it is experimental, how to report (`use-input-debug` + PORTS.txt) and how to opt out (`use-stickless`). Plan Task 7 has the full replacement text. Spec §4.6.\n\n**Files:**\n- Modify: `README.md` (\"Other h700 NextUI devices\" section ~93-101, full replacement)\n- Modify: `docs/h700-fixes.md` (F52+F53 bullets under `### 0.4.0` Fixes after F51; F51 tail sentence replaced; two new sections appended)\n- Modify: `assets/gt-input-remap.c` (top-of-file comment: second table, drop \"the RG SP has no sticks\", F53 sentence)\n- Modify: `assets/gt-remap-ports.txt` (one header comment line)\n\n**Acceptance Criteria:**\n- [ ] README section rewritten: experimental, use-stickless, use-input-debug, breadcrumb, GT Probe on `unrecognized joystick key set`\n- [ ] h700-fixes: F52 + F53 bullets; F51 tail updated; both new sections present\n- [ ] `grep -c 'no sticks' assets/gt-input-remap.c` -> 0\n- [ ] `make test` -> ALL TESTS PASSED\n\n**Verify:** `grep -n 'use-input-debug\\|use-stickless\\|xperimental' README.md docs/h700-fixes.md | wc -l` >= 6; `make test` -> `ALL TESTS PASSED`\n\n```json:metadata\n{\"files\": [\"README.md\", \"docs/h700-fixes.md\", \"assets/gt-input-remap.c\", \"assets/gt-remap-ports.txt\"], \"verifyCommand\": \"make test\", \"acceptanceCriteria\": [\"README section rewritten\", \"h700-fixes F52/F53 sections + changelog bullets + F51 tail\", \"shim header updated\", \"remap-list comment\"], \"modelTier\": \"mechanical\", \"wave\": 2}\n```",
+      "blockedBy": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "lastUpdated": "2026-09-01T23:42:32.648762+00:00"
+    },
+    {
+      "id": 8,
+      "subject": "Task 8: Build pak + RG SP regression gate, then finish branch",
+      "status": "completed",
+      "description": "**Goal:** A full pak build from `feat/stick-devices`, installed on the RG SP, shows `input class plain` and no behavior change across the affected port classes; on PASS squash-merge to local main (no push, no tag). Plan Task 8. Spec §7 + §8.\n\n**USER-ORDERED GATE — NON-SKIPPABLE.** This task was requested by the user in the current conversation. It MUST NOT be closed by walking around it, by declaring it \"verified inline\", or by substituting a cheaper check. Close only after every item in `acceptanceCriteria` has been re-validated independently, with output captured.\n\n**Files:**\n- Build output: `dist/Emus/h700/PORTS.pak.zip` (gitignored)\n- Device: RG SP `ssh root@10.0.1.16`; pak `/mnt/SDCARD/Emus/h700/PORTS.pak/`; log `/mnt/SDCARD/.userdata/h700/logs/PORTS.txt`; install = scp zip + `unzip -o -d Emus/h700/` with PortMaster idle\n\n**Acceptance Criteria:**\n- [ ] `make test` green; `make pak` OK; zip lists 2 `gamecontrollerdb_*_sticks.txt`; zip `lib/gt-input-remap.so` md5 == assets copy\n- [ ] after install + one GUI launch, PORTS.txt has `gt-h700: input class plain (js0 key word dff000000000000)`, no `unrecognized joystick key set`\n- [ ] GUI d-pad nav, A confirms / B backs (Camille confirms)\n- [ ] Celeste faces + trigger grab (Camille confirms)\n- [ ] Tunics! and BYTEPATH controls as before (Camille confirms)\n- [ ] Sonic 1: A+B jump, Menu tap toggles HUD, L2/R2 still reach the game (Camille confirms)\n- [ ] Animal Crossing: A/B/X/Y, L/R, Start act; with use-input-debug the log shows `evdev btn 304 -> slot 1`-style lines\n- [ ] power-button sleep in a port, resume with sound (Camille confirms)\n- [ ] use-input-debug run produced `gt-input-remap: input class plain` + `jbtn=` lines; flag removed; no use-stickless left on device\n\n**Verify:** `ssh root@10.0.1.16 'grep -n \"gt-h700: input class\\|unrecognized joystick\" /mnt/SDCARD/.userdata/h700/logs/PORTS.txt'` -> exactly one `input class plain (js0 key word dff000000000000)` line, no `unrecognized` line\n\n```json:metadata\n{\"files\": [\"dist/Emus/h700/PORTS.pak.zip\"], \"verifyCommand\": \"ssh root@10.0.1.16 'grep -n \\\"gt-h700: input class\\\\|unrecognized joystick\\\" /mnt/SDCARD/.userdata/h700/logs/PORTS.txt'\", \"acceptanceCriteria\": [\"build + zip contents + shim md5 match\", \"PORTS.txt breadcrumb plain, no unrecognized\", \"GUI nav/confirm\", \"Celeste\", \"Tunics!+BYTEPATH\", \"Sonic 1 + HUD + triggers\", \"Animal Crossing evdev trace\", \"sleep/resume\", \"debug run trace, flags removed\"], \"modelTier\": \"standard\", \"wave\": 2, \"userGate\": true, \"tags\": [\"user-gate\"], \"gateScope\": \"whole-plan\", \"failurePolicy\": \"stop-and-report\"}\n```",
+      "blockedBy": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "lastUpdated": "2026-09-02T11:14:49.133836+00:00"
+    }
+  ],
+  "lastUpdated": "2026-09-01T20:24:57.226341+00:00"
+}

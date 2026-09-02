@@ -16,8 +16,15 @@
  *   parked on the unmapped index 15: 0-2 (ESC/volume — would otherwise act
  *   as B/A/Y) and 14 (Menu's second emission, KEY_GOTO — would otherwise
  *   double-fire). Identity elsewhere. The d-pad rides SDL hat events and
- *   needs no index remap. Unconditional for all joysticks: the RG SP is a
- *   clamshell with no external pad expected; revisit if one is attached.
+ *   needs no index remap. Unconditional for all joysticks: these h700
+ *   handhelds have no external pad expected; revisit if one is attached.
+ *   Stick devices (RG34XXSP class) add L3/R3 clicks at evdev 313/316:
+ *   L2/R2 shift up by one raw index (12/13 -> 13/14), the Menu KEY_GOTO
+ *   echo by two (14 -> 16), and L3/R3 land at raw 12/15; since raw 15 now
+ *   carries R3, this table's park target moves from 15 to 17. Selected
+ *   once at load from GT_INPUT_CLASS; absent = this RG SP table. A third,
+ *   class-free table (gt_evdev_code_slot, F45/F52) maps kernel evdev codes
+ *   304-316 straight to slots, with no SDL-index hop at all.
  *
  * v2 — keyboard-event synthesis (F26, 2026-08-23). NextUI's SDL never
  * delivers gptokeyb's uinput "Fake Keyboard" to SDL apps, so every port
@@ -34,11 +41,13 @@
  * joystick events, so hybrid ports lose nothing. Only the simple
  * `name = key` subset of the gptk format is honored (letters, digits,
  * space/esc/tab/enter/backspace/shift/ctrl/alt, arrows); everything else —
- * analog lines (the RG SP has no sticks), deadzone config, gptokeyb's \"
- * placeholder, hold_state modifiers — is deliberately ignored. gptokeyb
- * keeps running untouched alongside: its synthetic keyboard is inert here,
- * but its Select+Start kill hotkey works off direct pad reads and stays
- * the quit path.
+ * deadzone modes/scaling, gptokeyb's \" placeholder, hold_state modifiers —
+ * is deliberately ignored. gptokeyb keeps running untouched alongside: its
+ * synthetic keyboard is inert here, but its Select+Start kill hotkey works
+ * off direct pad reads and stays the quit path. F53: on stick-class devices
+ * the eight analog lines (with gptokeyb's defaults and unified `deadzone`)
+ * are honored — stick deflections synthesize their keys the same way hats
+ * do.
  *
  * Both SDL_PollEvent and SDL_WaitEventTimeout are interposed (apps pump
  * through both). SDL_WaitEventTimeout may internally route through
@@ -69,11 +78,28 @@
                      * interposer's SDL2/SDL.h, which would otherwise pull
                      * this in, is stripped from that build) */
 
-static unsigned char gt_remap(unsigned char b) {
+/* F52: which measured raw-index table applies. Loaded once from
+ * GT_INPUT_CLASS (exported by launch.sh's gt-h700-input-class block, derived
+ * from the joystick node's EV_KEY bitmap): "sticks" = the RG34XXSP-class
+ * table, anything else (incl. absent) = the RG SP table below — so a device
+ * that fails detection gets exactly the pre-F52 behavior. */
+static int gt_sticks_class = 0;
+static void gt_class_load(void) {
+    const char *c = getenv("GT_INPUT_CLASS");
+    gt_sticks_class = (c && !strcmp(c, "sticks")) ? 1 : 0;
+}
+
+/* Park targets: one past each device's real button count, so no game can
+ * hold a binding there (RG SP: 15 buttons 0..14; stick devices: 17, 0..16). */
+#define GT_PARK_PLAIN  15
+#define GT_PARK_STICKS 17
+
+/* RG SP table — MEASURED 2026-08-19 (see the top-of-file comment). */
+static unsigned char gt_remap_plain(unsigned char b) {
     switch (b) {
-        case 0:  return 15;  /* ESC — park (would act as B) */
-        case 1:  return 15;  /* VolDown — park (would act as A) */
-        case 2:  return 15;  /* VolUp — park (would act as Y) */
+        case 0:  return GT_PARK_PLAIN;  /* ESC — park (would act as B) */
+        case 1:  return GT_PARK_PLAIN;  /* VolDown — park (would act as A) */
+        case 2:  return GT_PARK_PLAIN;  /* VolUp — park (would act as Y) */
         case 3:  return 1;   /* A */
         case 4:  return 0;   /* B */
         case 5:  return 2;   /* Y */
@@ -85,9 +111,47 @@ static unsigned char gt_remap(unsigned char b) {
         case 11: return 8;   /* Menu (TL2 half) */
         case 12: return 10;  /* L2 */
         case 13: return 11;  /* R2 */
-        case 14: return 15;  /* Menu's KEY_GOTO half — park (double-fire) */
+        case 14: return GT_PARK_PLAIN;  /* Menu's KEY_GOTO half — park (double-fire) */
         default: return b;
     }
+}
+
+/* Stick-class table (RG34XXSP) — MEASURED from the volunteer probe trace
+ * 2026-09-01. Identical to the RG SP through raw 11; the L3/R3 clicks
+ * (evdev 313 BTN_TR2 / 316 BTN_MODE, absent on the RG SP) take raw 12/15
+ * and shift L2/R2 to 13/14 and Menu's KEY_GOTO echo to 16. L3/R3 land on
+ * slots 9/12 — the two gaps of the TrimUI-layout table, the standard
+ * leftstick/rightstick positions of tg5040 mappings. */
+static unsigned char gt_remap_sticks(unsigned char b) {
+    switch (b) {
+        case 0:  return GT_PARK_STICKS;  /* ESC */
+        case 1:  return GT_PARK_STICKS;  /* VolDown */
+        case 2:  return GT_PARK_STICKS;  /* VolUp */
+        case 3:  return 1;   /* A */
+        case 4:  return 0;   /* B */
+        case 5:  return 2;   /* Y */
+        case 6:  return 3;   /* X */
+        case 7:  return 4;   /* L1 */
+        case 8:  return 5;   /* R1 */
+        case 9:  return 6;   /* Select */
+        case 10: return 7;   /* Start */
+        case 11: return 8;   /* Menu (TL2 half) */
+        case 12: return 9;   /* L3 click */
+        case 13: return 10;  /* L2 */
+        case 14: return 11;  /* R2 */
+        case 15: return 12;  /* R3 click */
+        case 16: return GT_PARK_STICKS;  /* Menu's KEY_GOTO half — park */
+        default: return b;
+    }
+}
+
+static unsigned char gt_remap(unsigned char b) {
+    return gt_sticks_class ? gt_remap_sticks(b) : gt_remap_plain(b);
+}
+
+/* The raw index of Menu's KEY_GOTO second emission for the active class. */
+static unsigned char gt_menu_echo_index(void) {
+    return gt_sticks_class ? 16 : 14;
 }
 
 /* ---- v2 shared logic (no SDL types; host-testable) -------------------- */
@@ -121,6 +185,8 @@ static gt_key gt_keyname(const char *name) {
     if (!strcmp(name, "down"))      { k.scancode = 81;  k.sym = GT_SCANCODE_MASK | 81;  return k; }
     if (!strcmp(name, "left"))      { k.scancode = 80;  k.sym = GT_SCANCODE_MASK | 80;  return k; }
     if (!strcmp(name, "right"))     { k.scancode = 79;  k.sym = GT_SCANCODE_MASK | 79;  return k; }
+    if (!strcmp(name, "home"))      { k.scancode = 74;  k.sym = GT_SCANCODE_MASK | 74;  return k; }
+    if (!strcmp(name, "end"))       { k.scancode = 77;  k.sym = GT_SCANCODE_MASK | 77;  return k; }
     if (!strcmp(name, "shift") ||
         !strcmp(name, "left_shift") ||
         !strcmp(name, "lshift"))    { k.scancode = 225; k.sym = GT_SCANCODE_MASK | 225; return k; }
@@ -159,32 +225,34 @@ static int gt_button_slot(const char *name) {
     if (!strcmp(name, "guide")) return 8;
     if (!strcmp(name, "l2"))    return 10;
     if (!strcmp(name, "r2"))    return 11;
+    if (!strcmp(name, "l3"))    return 9;   /* F52: stick clicks (stick-class devices) */
+    if (!strcmp(name, "r3"))    return 12;
     return -1;
 }
 
-/* F45: evdev key code -> the SDL joystick button INDEX NextUI's SDL2 assigns
- * it. NextUI's SDL enumerates this device's EV_KEY capability in ascending
- * code order, the three keyboard-type codes (ESC, VolDown, VolUp) taking
- * indices 0..2 (see the v1 note at the top of this file). Measured device
- * order (2026-08-28, evtest on the RG SP ANBERNIC-keys node): codes
- * 304,305,306,307,308,309,310,311,[312 Menu],314,315. Feeding the result to
- * gt_remap therefore reproduces the SDL path's button layout EXACTLY, so a
- * port driven by this evdev path (OpenCrossing — its stock 32-bit SDL yields
- * no joystick events at all) maps A/B/X/Y identically to every other port.
- * Returns -1 for codes SDL doesn't expose as a plain gameplay button
- * (Menu/GOTO/Vol/ESC), which the caller handles separately or ignores. */
-static int gt_evdev_code_sdl_index(int code) {
+/* F45/F52: evdev key code -> TrimUI-layout SLOT, directly. The evdev codes
+ * are the hardware truth and identical on every h700 Anbernic; only NextUI's
+ * SDL index order differs between the RG SP and stick devices (it enumerates
+ * the node's codes ascending after ESC/Vol, so the stick devices' extra
+ * 313/316 shift everything after them). Mapping code -> slot here makes the
+ * evdev gameplay path (OpenCrossing — its stock 32-bit SDL yields no
+ * joystick events) class-independent by construction; main() asserts it
+ * equals SDL-index -> gt_remap on both measured tables. Returns -1 for codes
+ * that are not plain gameplay buttons (Menu/GOTO/Vol/ESC). */
+static int gt_evdev_code_slot(int code) {
     switch (code) {
-        case 304: return 3;   /* BTN_SOUTH  */
-        case 305: return 4;   /* BTN_EAST   */
-        case 306: return 5;   /* BTN_C      */
-        case 307: return 6;   /* BTN_NORTH  */
-        case 308: return 7;   /* BTN_WEST   */
-        case 309: return 8;   /* BTN_Z      */
-        case 310: return 9;   /* BTN_TL     */
-        case 311: return 10;  /* BTN_TR     */
-        case 314: return 12;  /* BTN_SELECT */
-        case 315: return 13;  /* BTN_START  */
+        case 304: return 1;   /* BTN_SOUTH  A  */
+        case 305: return 0;   /* BTN_EAST   B  */
+        case 306: return 2;   /* BTN_C      Y  */
+        case 307: return 3;   /* BTN_NORTH  X  */
+        case 308: return 4;   /* BTN_WEST   L1 */
+        case 309: return 5;   /* BTN_Z      R1 */
+        case 310: return 6;   /* BTN_TL     Select */
+        case 311: return 7;   /* BTN_TR     Start  */
+        case 313: return 9;   /* BTN_TR2    L3 click (stick devices) */
+        case 314: return 10;  /* BTN_SELECT L2 */
+        case 315: return 11;  /* BTN_START  R2 */
+        case 316: return 12;  /* BTN_MODE   R3 click (stick devices) */
         default:  return -1;  /* 312 Menu / 354 GOTO / 1 ESC / 114-115 Vol */
     }
 }
@@ -199,6 +267,16 @@ static int gt_dir_slot(const char *name) {
     return -1;
 }
 
+/* F53: "left_analog_up" -> stick 0, dir 0 (dir uses gt_dir_slot's order). */
+static int gt_analog_name(const char *name, int *stick, int *dir) {
+    const char *rest;
+    if (!strncmp(name, "left_analog_", 12))       { *stick = 0; rest = name + 12; }
+    else if (!strncmp(name, "right_analog_", 13)) { *stick = 1; rest = name + 13; }
+    else return 0;
+    *dir = gt_dir_slot(rest);
+    return *dir >= 0;   /* rejects left_analog_up_repeat and friends */
+}
+
 static int gt_hat_bit_slot(int bit) {
     switch (bit) {
         case 1: return 0; /* SDL_HAT_UP */
@@ -210,14 +288,32 @@ static int gt_hat_bit_slot(int bit) {
 }
 
 typedef struct {
-    gt_key button_key[16]; /* indexed by post-v1-remap button index */
-    gt_key dir_key[4];     /* up/down/left/right */
-    int loaded;            /* any mapping present */
+    gt_key button_key[16];   /* indexed by post-v1-remap button index */
+    gt_key dir_key[4];       /* up/down/left/right (hat) */
+    gt_key analog_key[2][4]; /* F53: [stick 0=left 1=right][0=up 1=down 2=left 3=right] */
+    int analog_mouse[2];     /* F53: stick is mouse-driven in the gptk -> synthesize nothing */
+    int deadzone;            /* F53: |axis| >= deadzone = deflected */
+    int loaded;              /* any mapping present */
 } gt_keymap;
+
+/* F53: gptokeyb's built-in analog defaults (PortsMaster/gptokeyb, structs.h):
+ * left stick W/S/A/D, right stick End/Home/Left/Right, deadzone 15000. A gptk
+ * that names no analog line still gets these under gptokeyb, so the shim
+ * mirrors them. Does NOT mark the map loaded — only parsed lines do. */
+#define GT_DEADZONE_DEFAULT 15000
+static void gt_keymap_defaults(gt_keymap *m) {
+    m->analog_key[0][0] = gt_keyname("w");    m->analog_key[0][1] = gt_keyname("s");
+    m->analog_key[0][2] = gt_keyname("a");    m->analog_key[0][3] = gt_keyname("d");
+    m->analog_key[1][0] = gt_keyname("end");  m->analog_key[1][1] = gt_keyname("home");
+    m->analog_key[1][2] = gt_keyname("left"); m->analog_key[1][3] = gt_keyname("right");
+    m->analog_mouse[0] = m->analog_mouse[1] = 0;
+    m->deadzone = GT_DEADZONE_DEFAULT;
+}
 
 /* Parse one gptk line into the map. Returns 1 if the line mapped something,
  * 0 otherwise. Accepts the `name = value` subset; trims spaces/CR; ignores
- * comments, blanks, analog/deadzone/config lines, and unknown key names. */
+ * comments, blanks, non-`deadzone` config lines, and unknown key names;
+ * analog lines and `deadzone` are honored (F53). */
 static int gt_gptk_line(gt_keymap *m, const char *line) {
     char name[32], value[32];
     unsigned ni = 0, vi = 0;
@@ -236,6 +332,27 @@ static int gt_gptk_line(gt_keymap *m, const char *line) {
     value[vi] = 0;
     if (!ni || !vi) return 0;
 
+    /* F53: analog lines. A PRESENT line replaces the gptokeyb default: a known
+     * key sets it, an unknown name / the \" placeholder clears it, and a
+     * mouse_movement_* value marks the whole stick mouse-driven (gptokeyb
+     * emits no keys for a mouse stick). */
+    int stick, dir;
+    if (gt_analog_name(name, &stick, &dir)) {
+        if (!strncmp(value, "mouse_movement", 14)) {
+            m->analog_mouse[stick] = 1;
+            m->analog_key[stick][dir].sym = 0; m->analog_key[stick][dir].scancode = 0;
+        } else {
+            m->analog_key[stick][dir] = gt_keyname(value);   /* unknown -> sym 0 = cleared */
+        }
+        m->loaded = 1;
+        return 1;
+    }
+    if (!strcmp(name, "deadzone")) {   /* gptokeyb's unified deadzone; 0 would read a centered stick as deflected */
+        int dz = atoi(value);
+        if (dz >= 1 && dz <= 32767) m->deadzone = dz;
+        return 0;   /* config, not a mapping */
+    }
+
     gt_key k = gt_keyname(value);
     if (!k.sym) return 0;
 
@@ -243,7 +360,7 @@ static int gt_gptk_line(gt_keymap *m, const char *line) {
     if (slot >= 0) { m->button_key[slot] = k; m->loaded = 1; return 1; }
     slot = gt_dir_slot(name);
     if (slot >= 0) { m->dir_key[slot] = k; m->loaded = 1; return 1; }
-    return 0; /* analog/config/unknown names: ignored by design */
+    return 0; /* other config/unknown names: ignored by design */
 }
 
 /* Hat edge computation: given previous and current hat bitmasks, list the
@@ -282,6 +399,23 @@ static int gt_evdev_hat_edges(int prev, int cur, int slot_neg, int slot_pos,
     if (cur < 0)       { out_slot[n] = slot_neg; out_pressed[n] = 1; n++; }
     else if (cur > 0)  { out_slot[n] = slot_pos; out_pressed[n] = 1; n++; }
     return n;
+}
+
+/* F53: axis value -> direction. gptokeyb: zero iff |v| < deadzone, so a value
+ * AT the deadzone counts as deflected. */
+static int gt_axis_dir(int value, int deadzone) {
+    if (value <= -deadzone) return -1;
+    if (value >=  deadzone) return  1;
+    return 0;
+}
+
+/* F53: which stick an SDL axis belongs to and which analog_key slots its
+ * negative / positive ends drive. Measured on the RG34XXSP: a0 left X, a1 left
+ * Y, a2 right X, a3 right Y; negative = up / left. Slot order = gt_dir_slot. */
+static void gt_axis_slots(int axis, int *stick, int *slot_neg, int *slot_pos) {
+    *stick = axis / 2;
+    if (axis & 1) { *slot_neg = 0; *slot_pos = 1; }   /* Y: up / down */
+    else          { *slot_neg = 2; *slot_pos = 3; }   /* X: left / right */
 }
 
 /* ---- v3 state-polling half (no SDL types; host-testable) --------------
@@ -588,11 +722,12 @@ static int gt_is_menu_button(unsigned char raw) {
 }
 
 /* Which raw indices gt_hud_intercept must SWALLOW (never deliver to the game):
- * the Menu toggle button (raw 11) plus raw 14's KEY_GOTO second emission. Only
- * raw 11 drives the toggle — 14 is swallowed without touching the tap machine.
- * Pure/host-testable so main() can assert the swallow decision directly. */
+ * the Menu toggle button (raw 11) plus KEY_GOTO's second emission — raw 14 on
+ * the RG SP, raw 16 on stick devices (F52; on those, raw 14 is R2!). Only
+ * raw 11 drives the toggle — the echo is swallowed without touching the tap
+ * machine. Pure/host-testable so main() can assert the swallow decision. */
 static int gt_menu_swallow(unsigned char raw) {
-    return gt_is_menu_button(raw) || (raw == 14);
+    return gt_is_menu_button(raw) || (raw == gt_menu_echo_index());
 }
 
 /* evdev key codes for the Menu/Volume buttons on this device family (RG SP,
@@ -661,6 +796,36 @@ int main(void) {
         }
     }
 
+    /* F52: the stick-class table (RG34XXSP volunteer trace, 2026-09-01). The
+     * L3/R3 clicks (evdev 313/316) sit at raw 12/15 and push L2/R2/Menu-echo
+     * up by one; park moves to 17 (one past the device's 17 buttons). */
+    setenv("GT_INPUT_CLASS", "sticks", 1); gt_class_load();
+    if (!gt_sticks_class) return fail("GT_INPUT_CLASS=sticks not loaded");
+    {
+        static const struct { unsigned char in, out; } scases[] = {
+            {3, 1}, {4, 0}, {5, 2}, {6, 3}, {7, 4}, {8, 5}, {9, 6}, {10, 7}, {11, 8},
+            {12, 9}, {13, 10}, {14, 11}, {15, 12},
+            {0, 17}, {1, 17}, {2, 17}, {16, 17},
+            {17, 17}, {18, 18},
+        };
+        for (i = 0; i < sizeof(scases) / sizeof(scases[0]); i++) {
+            if (gt_remap(scases[i].in) != scases[i].out) {
+                fprintf(stderr, "sticks remap(%u) = %u, want %u\n",
+                        scases[i].in, gt_remap(scases[i].in), scases[i].out);
+                return 1;
+            }
+        }
+        if (!gt_menu_swallow(11) || !gt_menu_swallow(16)) return fail("sticks: swallow raw 11 and 16");
+        if (gt_menu_swallow(14)) return fail("sticks: raw 14 is R2 and must NOT be swallowed");
+        if (!gt_is_menu_button(11) || gt_is_menu_button(16)) return fail("sticks: Menu identity is raw 11 only");
+    }
+    setenv("GT_INPUT_CLASS", "plain", 1); gt_class_load();
+    if (gt_sticks_class) return fail("GT_INPUT_CLASS=plain must select the RG SP table");
+    unsetenv("GT_INPUT_CLASS"); gt_class_load();
+    if (gt_sticks_class) return fail("absent GT_INPUT_CLASS must select the RG SP table");
+    if (gt_menu_swallow(16)) return fail("plain: raw 16 must not be swallowed");
+    if (gt_remap(14) != 15) return fail("plain: raw 14 still parks at 15");
+
     /* v2: key-name table — the whole set tunics.gptk needs, plus specials */
     if (gt_keyname("space").sym != ' ' || gt_keyname("space").scancode != 44)
         return fail("keyname space");
@@ -687,9 +852,13 @@ int main(void) {
         if (!gt_gptk_line(&m, "back = esc")) return fail("parse back=esc");
         if (!gt_gptk_line(&m, "start = w")) return fail("parse start=w");
         if (!gt_gptk_line(&m, "up = up")) return fail("parse up=up");
+        if (!gt_gptk_line(&m, "l3 = q")) return fail("parse l3=q");
+        if (m.button_key[9].sym != 'q') return fail("l3 slot != q");
         if (gt_gptk_line(&m, "l2 = \\\"")) return fail("quote placeholder parsed");
-        if (gt_gptk_line(&m, "deadzone = 2000")) return fail("config line parsed");
-        if (gt_gptk_line(&m, "left_analog_up = up")) return fail("analog line parsed");
+        if (gt_gptk_line(&m, "deadzone = 2000")) return fail("deadzone config line is not a mapping (returns 0)");
+        if (m.deadzone != 2000) return fail("deadzone = 2000 not honored");
+        if (!gt_gptk_line(&m, "left_analog_up = up")) return fail("F53: analog line must map");
+        if (m.analog_key[0][0].sym != (GT_SCANCODE_MASK | 82)) return fail("left_analog_up != Up key");
         if (gt_gptk_line(&m, "# comment")) return fail("comment parsed");
         if (m.button_key[1].sym != ' ') return fail("A slot != space");
         if (m.button_key[0].sym != 's') return fail("B slot != s");
@@ -699,16 +868,90 @@ int main(void) {
         if (!m.loaded) return fail("map not marked loaded");
     }
 
-    /* F48: layout swap */
+    /* F48: layout swap. gt_layout_load is exercised once here (pre-F52 host
+     * builds never called it under -DGT_REMAP_TEST, since it is otherwise
+     * only reached from gt_init in the interposer half that this build
+     * strips out, leaving it an unused-function warning until now); the two
+     * branches below drive gt_ab_swap directly since the env-parsing itself
+     * is asserted by this one call. */
+    unsetenv("GT_CONTROLLER_LAYOUT"); gt_layout_load();
+    if (gt_ab_swap) return fail("default (no GT_CONTROLLER_LAYOUT) must not swap a/b");
     gt_ab_swap = 0;
     if (gt_button_slot("a") != 1 || gt_button_slot("b") != 0) return fail("nintendo a/b slots");
     if (gt_button_slot("x") != 3 || gt_button_slot("y") != 2) return fail("nintendo x/y slots");
     if (gt_button_slot("l1") != 4) return fail("nintendo l1 slot moved");
+    if (gt_button_slot("l3") != 9 || gt_button_slot("r3") != 12) return fail("l3/r3 slots 9/12");
     gt_ab_swap = 1;
     if (gt_button_slot("a") != 0 || gt_button_slot("b") != 1) return fail("xbox a/b slots");
     if (gt_button_slot("x") != 2 || gt_button_slot("y") != 3) return fail("xbox x/y slots");
     if (gt_button_slot("l1") != 4) return fail("xbox l1 slot moved");
     gt_ab_swap = 0;
+
+    /* F53: analog synthesis — gptokeyb parity (PortsMaster/gptokeyb structs.h
+     * defaults, keyboard.cpp deadzone semantics). */
+    if (gt_keyname("home").scancode != 74 || gt_keyname("home").sym != (GT_SCANCODE_MASK | 74)) return fail("keyname home");
+    if (gt_keyname("end").scancode  != 77 || gt_keyname("end").sym  != (GT_SCANCODE_MASK | 77)) return fail("keyname end");
+    {
+        gt_keymap m; memset(&m, 0, sizeof m);
+        gt_keymap_defaults(&m);
+        if (m.analog_key[0][0].sym != 'w' || m.analog_key[0][1].sym != 's' ||
+            m.analog_key[0][2].sym != 'a' || m.analog_key[0][3].sym != 'd') return fail("left analog defaults w/s/a/d");
+        if (m.analog_key[1][0].sym != (GT_SCANCODE_MASK | 77) ||   /* up = End */
+            m.analog_key[1][1].sym != (GT_SCANCODE_MASK | 74) ||   /* down = Home */
+            m.analog_key[1][2].sym != (GT_SCANCODE_MASK | 80) ||   /* left */
+            m.analog_key[1][3].sym != (GT_SCANCODE_MASK | 79))     /* right */
+            return fail("right analog defaults end/home/left/right");
+        if (m.deadzone != 15000) return fail("deadzone default 15000");
+        if (m.loaded) return fail("defaults alone must not mark the map loaded");
+        if (!gt_gptk_line(&m, "left_analog_up = i")) return fail("parse left_analog_up=i");
+        if (m.analog_key[0][0].sym != 'i' || !m.loaded) return fail("left_analog_up override");
+        if (!gt_gptk_line(&m, "left_analog_down = \\\"")) return fail("placeholder analog line must count as present");
+        if (m.analog_key[0][1].sym != 0) return fail("placeholder must CLEAR the default");
+        if (!gt_gptk_line(&m, "left_analog_left = nosuchkey")) return fail("unknown analog value counts as present");
+        if (m.analog_key[0][2].sym != 0) return fail("unknown analog value must clear");
+        if (!gt_gptk_line(&m, "right_analog_left = mouse_movement_left")) return fail("parse mouse_movement");
+        if (!m.analog_mouse[1]) return fail("mouse_movement marks the right stick mouse-driven");
+        if (m.analog_key[1][2].sym != 0) return fail("mouse direction cleared");
+        if (m.analog_mouse[0]) return fail("left stick must not be marked mouse");
+        if (gt_gptk_line(&m, "deadzone = 20000")) return fail("deadzone is config, returns 0");
+        if (m.deadzone != 20000) return fail("deadzone 20000");
+        gt_gptk_line(&m, "deadzone = 0");     if (m.deadzone != 20000) return fail("deadzone 0 rejected");
+        gt_gptk_line(&m, "deadzone = 99999"); if (m.deadzone != 20000) return fail("deadzone 99999 rejected");
+        gt_gptk_line(&m, "deadzone = abc");   if (m.deadzone != 20000) return fail("deadzone abc rejected");
+        gt_gptk_line(&m, "deadzone = 32767"); if (m.deadzone != 32767) return fail("deadzone 32767 accepted");
+        gt_gptk_line(&m, "deadzone = 1");     if (m.deadzone != 1) return fail("deadzone 1 accepted");
+        if (gt_gptk_line(&m, "deadzone_x = 5000")) return fail("deadzone_x stays ignored");
+        if (gt_gptk_line(&m, "left_analog_up_repeat = true")) return fail("repeat flags stay ignored");
+    }
+    /* axis value -> direction, per-axis (gptokeyb: zero iff |v| < deadzone) */
+    if (gt_axis_dir(14999, 15000) != 0)   return fail("14999 inside deadzone");
+    if (gt_axis_dir(15000, 15000) != 1)   return fail("15000 deflected +");
+    if (gt_axis_dir(-15000, 15000) != -1) return fail("-15000 deflected -");
+    if (gt_axis_dir(27935, 15000) != 1)   return fail("short-range max still deflects");
+    if (gt_axis_dir(-32768, 15000) != -1) return fail("full negative");
+    if (gt_axis_dir(0, 15000) != 0)       return fail("centered");
+    if (gt_axis_dir(500, 1) != 1)         return fail("deadzone 1: any offset deflects");
+    /* axis -> stick + slot ends: 0/2 = X (left 2 / right 3), 1/3 = Y (up 0 / down 1) */
+    {
+        int st, sn, sp;
+        gt_axis_slots(0, &st, &sn, &sp); if (st != 0 || sn != 2 || sp != 3) return fail("axis 0 = left X");
+        gt_axis_slots(1, &st, &sn, &sp); if (st != 0 || sn != 0 || sp != 1) return fail("axis 1 = left Y");
+        gt_axis_slots(2, &st, &sn, &sp); if (st != 1 || sn != 2 || sp != 3) return fail("axis 2 = right X");
+        gt_axis_slots(3, &st, &sn, &sp); if (st != 1 || sn != 0 || sp != 1) return fail("axis 3 = right Y");
+    }
+    /* edge sequence on a Y axis: center -> up (press up), up -> down through
+     * center (release up BEFORE press down), down -> center (release down) */
+    {
+        int es[2], ep[2], en;
+        en = gt_evdev_hat_edges(0, -1, 0, 1, es, ep);
+        if (en != 1 || es[0] != 0 || ep[0] != 1) return fail("stick center->up");
+        en = gt_evdev_hat_edges(-1, 1, 0, 1, es, ep);
+        if (en != 2 || es[0] != 0 || ep[0] != 0 || es[1] != 1 || ep[1] != 1) return fail("stick up->down releases first");
+        en = gt_evdev_hat_edges(1, 0, 0, 1, es, ep);
+        if (en != 1 || es[0] != 1 || ep[0] != 0) return fail("stick down->center");
+        en = gt_evdev_hat_edges(1, 1, 0, 1, es, ep);
+        if (en != 0) return fail("held stick emits nothing");
+    }
 
     /* v2: hat edges — releases before presses, diagonal transitions */
     {
@@ -901,22 +1144,41 @@ int main(void) {
       gt_menu_toggle(&s,&vis,gt_is_menu_button(11),0);   /* 11 up   */
       if (vis != 0) return fail("Menu+Vol combo must not flip"); }
 
-    /* F45: evdev gameplay path — code -> SDL index -> gt_remap slot must equal
-     * the SDL path's mapping, so AC maps its buttons identically to every port
-     * (device-measured codes, 2026-08-28). */
-    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(304)) != 1)  return fail("evdev 304 -> A slot 1");
-    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(305)) != 0)  return fail("evdev 305 -> B slot 0");
-    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(306)) != 2)  return fail("evdev 306 -> Y slot 2");
-    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(307)) != 3)  return fail("evdev 307 -> X slot 3");
-    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(308)) != 4)  return fail("evdev 308 -> L1 slot 4");
-    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(309)) != 5)  return fail("evdev 309 -> R1 slot 5");
-    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(310)) != 6)  return fail("evdev 310 -> Select slot 6");
-    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(311)) != 7)  return fail("evdev 311 -> Start slot 7");
-    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(314)) != 10) return fail("evdev 314 -> L2 slot 10");
-    if (gt_remap((unsigned char)gt_evdev_code_sdl_index(315)) != 11) return fail("evdev 315 -> R2 slot 11");
-    if (gt_evdev_code_sdl_index(312) != -1) return fail("evdev 312 (Menu) is not a gameplay button");
-    if (gt_evdev_code_sdl_index(354) != -1) return fail("evdev 354 (GOTO) is not a gameplay button");
-    if (gt_evdev_code_sdl_index(1)   != -1) return fail("evdev 1 (ESC) is not a gameplay button");
+    /* F52: evdev code -> slot is DIRECT and device-independent (the codes are
+     * the hardware truth; only the SDL index order differs between classes). */
+    if (gt_evdev_code_slot(304) != 1)  return fail("evdev 304 -> A slot 1");
+    if (gt_evdev_code_slot(305) != 0)  return fail("evdev 305 -> B slot 0");
+    if (gt_evdev_code_slot(306) != 2)  return fail("evdev 306 -> Y slot 2");
+    if (gt_evdev_code_slot(307) != 3)  return fail("evdev 307 -> X slot 3");
+    if (gt_evdev_code_slot(308) != 4)  return fail("evdev 308 -> L1 slot 4");
+    if (gt_evdev_code_slot(309) != 5)  return fail("evdev 309 -> R1 slot 5");
+    if (gt_evdev_code_slot(310) != 6)  return fail("evdev 310 -> Select slot 6");
+    if (gt_evdev_code_slot(311) != 7)  return fail("evdev 311 -> Start slot 7");
+    if (gt_evdev_code_slot(313) != 9)  return fail("evdev 313 -> L3 slot 9");
+    if (gt_evdev_code_slot(314) != 10) return fail("evdev 314 -> L2 slot 10");
+    if (gt_evdev_code_slot(315) != 11) return fail("evdev 315 -> R2 slot 11");
+    if (gt_evdev_code_slot(316) != 12) return fail("evdev 316 -> R3 slot 12");
+    if (gt_evdev_code_slot(312) != -1) return fail("evdev 312 (Menu) is not a gameplay button");
+    if (gt_evdev_code_slot(354) != -1) return fail("evdev 354 (GOTO) is not a gameplay button");
+    if (gt_evdev_code_slot(1)   != -1) return fail("evdev 1 (ESC) is not a gameplay button");
+    if (gt_evdev_code_slot(114) != -1) return fail("evdev 114 (VolDown) is not a gameplay button");
+    /* consistency: the direct table equals SDL-index -> gt_remap on BOTH measured
+     * tables (NextUI's SDL orders codes ascending after ESC/Vol at 0..2). */
+    {
+        static const int rgsp_code[]  = {304,305,306,307,308,309,310,311,314,315};
+        static const int rgsp_idx[]   = {  3,  4,  5,  6,  7,  8,  9, 10, 12, 13};
+        static const int stick_code[] = {304,305,306,307,308,309,310,311,313,314,315,316};
+        static const int stick_idx[]  = {  3,  4,  5,  6,  7,  8,  9, 10, 12, 13, 14, 15};
+        unsetenv("GT_INPUT_CLASS"); gt_class_load();
+        for (i = 0; i < 10; i++)
+            if (gt_evdev_code_slot(rgsp_code[i]) != (int)gt_remap((unsigned char)rgsp_idx[i]))
+                return fail("direct evdev slot != plain two-step");
+        setenv("GT_INPUT_CLASS", "sticks", 1); gt_class_load();
+        for (i = 0; i < 12; i++)
+            if (gt_evdev_code_slot(stick_code[i]) != (int)gt_remap((unsigned char)stick_idx[i]))
+                return fail("direct evdev slot != sticks two-step");
+        unsetenv("GT_INPUT_CLASS"); gt_class_load();
+    }
 
     /* F45: evdev hat edges — release-before-press, center + straight-through */
     {
@@ -1060,22 +1322,16 @@ static void *gt_evdev_thread(void *arg) {
             } else if (cls == GT_EVK_VOL) {
                 gt_menu_toggle(&gt_tap, &gt_hud_visible, 0, down);
             } else if (keys_on) {
-                /* F45: gameplay button -> synthesized keystate. For ports whose
-                 * SDL delivers no joystick events (OpenCrossing's stock 32-bit
-                 * SDL 2.0.12), the v1/v2/v3 SDL paths never fire; drive the same
-                 * gptk map straight from evdev instead. gt_evdev_code_sdl_index
-                 * -> gt_remap reuses the SDL path's exact button layout. */
-                int idx = gt_evdev_code_sdl_index(ev.code);
-                if (idx >= 0) {
-                    int slot = gt_remap((unsigned char)idx);
-                    if (slot >= 0 && slot < 16) {
-                        gt_key k = gt_map.button_key[slot];
-                        if (k.sym) {
-                            gt_synth_set(gt_synth_keys, k.scancode, down);
-                            if (gt_debug())
-                                fprintf(stderr, "gt-input-remap: evdev btn %d -> slot %d key 0x%x (%s)\n",
-                                        (int)ev.code, slot, (unsigned)k.sym, down ? "down" : "up");
-                        }
+                /* F45/F52: gameplay button -> synthesized keystate, straight
+                 * from the evdev code (class-independent; see gt_evdev_code_slot). */
+                int slot = gt_evdev_code_slot(ev.code);
+                if (slot >= 0 && slot < 16) {
+                    gt_key k = gt_map.button_key[slot];
+                    if (k.sym) {
+                        gt_synth_set(gt_synth_keys, k.scancode, down);
+                        if (gt_debug())
+                            fprintf(stderr, "gt-input-remap: evdev btn %d -> slot %d key 0x%x (%s)\n",
+                                    (int)ev.code, slot, (unsigned)k.sym, down ? "down" : "up");
                     }
                 }
             }
@@ -1125,6 +1381,7 @@ static void gt_evdev_ensure(void) {
 static SDL_Event gt_stash[8];
 static int gt_stash_n;
 static int gt_hat_prev;
+static int gt_axis_prev[4];  /* F53: per-axis last direction (-1/0/+1) */
 
 /* v3 state-polling half: the synthetic keyboard-state array (set as keys are
  * synthesized) and the merged buffer handed to the app. gt_ks_active flips on
@@ -1145,6 +1402,9 @@ static void gt_init(void) {
         fprintf(stderr, "gt-input-remap: HUD enabled\n");
     }
     gt_layout_load(); /* F48: independent of GT_REMAP_GPTK/GT_EVDEV_KEYS below */
+    gt_class_load();  /* F52: plain (RG SP) unless launch.sh exported GT_INPUT_CLASS=sticks */
+    if (gt_debug())
+        fprintf(stderr, "gt-input-remap: input class %s\n", gt_sticks_class ? "sticks" : "plain");
     const char *path = getenv("GT_REMAP_GPTK");
     if (!path || !*path) return;
     FILE *fh = fopen(path, "r");
@@ -1152,6 +1412,7 @@ static void gt_init(void) {
         fprintf(stderr, "gt-input-remap: cannot open GT_REMAP_GPTK=%s\n", path);
         return;
     }
+    gt_keymap_defaults(&gt_map);   /* F53: gptokeyb analog defaults; a parsed line overrides */
     char line[256];
     int n = 0;
     while (fgets(line, sizeof line, fh))
@@ -1279,6 +1540,40 @@ static void gt_rewrite(SDL_Event *ev) {
         /* no mapped edges: leave the hat event for the game as-is */
         return;
     }
+
+    /* F53: analog stick -> the gptk's analog keys. Stick-class devices only
+     * (the RG SP's three phantom axes never move, and plain must stay
+     * byte-for-byte pre-F53). Same shape as the hat path: release-before-press
+     * edges from gt_evdev_hat_edges, the first key REPLACES the axis event,
+     * the rest ride the stash; no mapped edge -> the axis passes through, so a
+     * hybrid port that reads raw axes keeps them. A mouse-driven stick is left
+     * alone entirely (gptokeyb emits no keys for it). Re-pass safe: a key event
+     * is never rewritten, and prev == cur yields no edges. */
+    if (ev->type == SDL_JOYAXISMOTION && gt_map.loaded && gt_sticks_class
+        && ev->jaxis.axis < 4) {
+        int axis = ev->jaxis.axis, stick, sneg, spos;
+        gt_axis_slots(axis, &stick, &sneg, &spos);
+        if (gt_map.analog_mouse[stick]) return;
+        int cur = gt_axis_dir(ev->jaxis.value, gt_map.deadzone);
+        int slots[2], pressed[2];
+        int n = gt_evdev_hat_edges(gt_axis_prev[axis], cur, sneg, spos, slots, pressed);
+        if (gt_debug() && cur != gt_axis_prev[axis])
+            fprintf(stderr, "gt-input-remap: axis %d %d -> dir %d\n", axis, (int)ev->jaxis.value, cur);
+        gt_axis_prev[axis] = cur;
+        Uint32 ts = ev->jaxis.timestamp;
+        int emitted = 0, i;
+        for (i = 0; i < n; i++) {
+            gt_key k = gt_map.analog_key[stick][slots[i]];
+            if (!k.sym) continue;
+            if (!emitted) {
+                gt_make_key_event(ev, ts, k, pressed[i]);              /* replace in place */
+            } else if (gt_stash_n < (int)(sizeof gt_stash / sizeof gt_stash[0])) {
+                gt_make_key_event(&gt_stash[gt_stash_n++], ts, k, pressed[i]);
+            }
+            emitted++;
+        }
+        return;
+    }
 }
 
 /* F35 (Decision A): Menu-edge SWALLOWER for the SDL path. Runs on the RAW
@@ -1314,8 +1609,9 @@ static int gt_hud_intercept(SDL_Event *ev) {
 
     /* Device-gate diagnostic (temporary): every Menu-related edge with its raw
      * index, edge, and the resulting HUD state, so the next on-device test
-     * shows the exact 11/14 press/release pattern. */
-    if (gt_hud_debug() && (b == 11 || b == 14))
+     * shows the exact 11/echo press/release pattern (F52: the echo is raw 14
+     * on the RG SP, raw 16 on stick-class devices — see gt_menu_echo_index). */
+    if (gt_hud_debug() && (b == 11 || b == gt_menu_echo_index()))
         fprintf(stderr, "gt-hud: raw=%u %s menu=%d vis=%d\n",
                 (unsigned)b, is_down ? "down" : "up", gt_is_menu_button(b), gt_hud_visible);
     if (gt_hud_debug() && swallow && gt_is_menu_button(b))   /* actual toggle path (raw 11) */

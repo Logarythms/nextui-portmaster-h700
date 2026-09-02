@@ -7,6 +7,7 @@
 # from the port's gptk. See assets/gt-input-remap.c for the details. Users can
 # extend this without rebuilding via a `use-remap-ports` file in the pak's
 # userdata dir. Lines starting with # never match a filename and act as comments.
+# On stick-equipped devices the shim also honors the gptk's left/right_analog lines (F53).
 Tunics!.sh
 # v0.2.2: keyboard-gptk ports, user-reported input-dead and device-verified
 # fixed by the shim (Camille, 2026-08-24). BYTEPATH also joins the list; its

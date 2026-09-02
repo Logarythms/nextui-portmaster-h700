@@ -92,13 +92,35 @@ Details in [`docs/h700-fixes.md`](docs/h700-fixes.md#ports-this-platform-cant-ru
 
 ## Other h700 NextUI devices
 
-Only the RG SP is verified. The pak adapts its hardware profile, screen
-geometry, and sleep trigger to the device it runs on (RG34XXSP, the RG35XX
-and RG40XX families), so it *may* work elsewhere — but nobody has tried yet,
-and the button mapping has only ever been measured on the RG SP. On devices
-with analog sticks, expect working buttons at best; stick input is not
-mapped. If you try one, please open an issue with the result, and include
-the `DEVICE INFO` line from `.userdata/h700/logs/PORTS.txt` on your SD card.
+Only the RG SP is verified in hand. The pak adapts its hardware profile,
+screen geometry and sleep trigger to the device it runs on (RG34XXSP, the
+RG35XX and RG40XX families, CubeXX), and since 0.4.0 it also adapts its
+**controller tables**: at launch it reads which buttons the device's input
+node actually has and picks the matching measured mapping, so triggers,
+stick clicks and the Menu button behave on stick-equipped devices too.
+
+**Analog sticks. Experimental — not yet verified on hardware.** On devices
+with sticks the pak installs a controller mapping that carries both sticks
+(native SDL ports and the PortMaster GUI use them directly), and the
+built-in input translator turns stick movement into the keys a port's
+`.gptk` expects — the same `left_analog_*` / `right_analog_*` lines and
+defaults gptokeyb uses. The device profile then reports two analog sticks,
+so ports pick their stick control schemes. None of this has been run on
+stick hardware yet: the tables come from a volunteer's RG34XXSP probe log.
+If a port's stick scheme misbehaves, create an empty file `use-stickless`
+in `.userdata/h700/PORTS-portmaster/` on the SD card — ports go back to
+their d-pad schemes while buttons and native stick support stay correct.
+
+**Reporting.** Create an empty file `use-input-debug` in the same folder,
+launch the port, then open an issue with `.userdata/h700/logs/PORTS.txt`
+attached. It carries the `gt-h700: input class …` line (which table was
+chosen and why), the `DEVICE INFO` line, and the button and stick events the
+translator forwarded to the game (Menu presses are consumed by the HUD layer
+and don't appear). If the log says `unrecognized joystick key set [...]`,
+quote that line's bracketed key word in the issue — it's what we need to
+add your device (the GT Probe measurement pak the log line mentions isn't
+published yet, so the log lines above are enough). Reports from any h700
+device we haven't verified are welcome — open an issue with the result.
 
 ## What works
 

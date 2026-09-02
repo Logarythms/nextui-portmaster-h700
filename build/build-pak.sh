@@ -153,13 +153,24 @@ edit_portmaster_launch() { # $1=launch.sh path
   # launch.sh maps RG34xx*->rg34xx, RG35xx*->rg35xx, RG40xx*->rg40xx,
   # RGcubexx->cube, unknown->rg40xx; each bucket is geometry-uniform), while
   # the wiki documents exact SKUs (rg34xxsp, rg35xxsp, ...) for newer
-  # builds. GT_PANEL_W/H feed the device_info resolution
+  # builds. F53: the token lookup order is now model -> bucket -> default —
+  # the exact SKU from $RGXX_MODEL (lowercased) is tried first, then the
+  # $DEVICE family bucket, then the RG SP default — and where a bucket is
+  # ambiguous between the stickless and the stick SKU (rg34xx, rg35xx,
+  # unknown), GT_INPUT_CLASS=sticks refines the pick; an exact-SKU match is
+  # never refined. GT_PANEL_W/H feed the device_info resolution
   # fallback and the F41 Sonic width, and sit on the common path so both the
   # GUI and run_port inherit them. RAM is live-detected on both code paths
   # (hardware.py sysconf override; device_info free), so profile RAM never
   # matters. rgcubexx: harbourmaster has no CubeXX profile — nearest h700 pin,
   # but the panel exports carry the true 720x720. Only the RG SP arm is
-  # device-verified; the rest follow the NextUI-h700 wiki token list.
+  # device-verified; the rest follow the NextUI-h700 wiki token list. F52:
+  # the same block first classifies the joystick node's key bitmap into
+  # GT_INPUT_CLASS (plain|sticks), consumed by set_controller_layout, the
+  # shim, and the F53 bucket refinement. F53 also adds the use-stickless
+  # hatch here (a userdata flag file -> GT_ANALOG_STICKS=0, applied by
+  # edit_portmaster_device_info): a policy knob independent of both the
+  # measured input class and the profile tables.
   if ! grep -q 'gt-h700-device-pin' "$f"; then
     awk '{ print } $0 == "mkdir -p \"$XDG_DATA_HOME\"" {
       print ""
@@ -167,18 +178,85 @@ edit_portmaster_launch() { # $1=launch.sh path
       print "# NextUI'\''s $DEVICE SKU token (F51); unknown/absent = RG SP profile."
       print "if [ \"$PLATFORM\" = \"h700\" ]; then"
       print "    mkdir -p \"$HOME/.config\""
-      print "    case \"${DEVICE:-}\" in"
-      print "        rg34xxsp)             gt_pm_device=rg34xx-sp;   GT_PANEL_W=720; GT_PANEL_H=480 ;;"
-      print "        rg35xxh)              gt_pm_device=rg35xx-h;    GT_PANEL_W=640; GT_PANEL_H=480 ;;"
-      print "        rg35xxplus|rg35xxpro) gt_pm_device=rg35xx-plus; GT_PANEL_W=640; GT_PANEL_H=480 ;;"
-      print "        rg35xxsp)             gt_pm_device=rg35xx-sp;   GT_PANEL_W=640; GT_PANEL_H=480 ;;"
-      print "        rg35xx)               gt_pm_device=rg35xx-plus; GT_PANEL_W=640; GT_PANEL_H=480 ;;"
-      print "        rg40xxh|rg40xx)       gt_pm_device=rg40xx-h;    GT_PANEL_W=640; GT_PANEL_H=480 ;;"
-      print "        rg40xxv)              gt_pm_device=rg40xx-v;    GT_PANEL_W=640; GT_PANEL_H=480 ;;"
-      print "        rg28xx)               gt_pm_device=rg28xx;      GT_PANEL_W=640; GT_PANEL_H=480 ;;"
-      print "        rgcubexx|cube)        gt_pm_device=rg34xx-h;    GT_PANEL_W=720; GT_PANEL_H=720 ;;"
-      print "        *)                    gt_pm_device=rg34xx-h;    GT_PANEL_W=720; GT_PANEL_H=480 ;;  # rgsp/rg34xx*/unknown"
+      print "    # gt-h700-input-class (F52): which measured input table applies. The js0"
+      print "    # node'\''s EV_KEY bitmap word for codes 256-319 is dff... on the RG SP"
+      print "    # (304-312,314,315) and 1fff... on stick-equipped devices (304-316: the"
+      print "    # L3/R3 clicks 313/316 shift every later SDL button index). Same GUID on"
+      print "    # both, so this - not the controller DB - has to pick the table. Anything"
+      print "    # unrecognized = plain (the RG SP tables, today'\''s behavior) + a log line."
+      print "    gt_dev_file=\"${GT_INPUT_DEVICES_FILE:-/proc/bus/input/devices}\""
+      print "    # Read a copy, never the proc file itself: busybox read polls fd 0 before"
+      print "    # every byte and /proc/bus/input/devices only polls readable on input"
+      print "    # hotplug, so a direct read loop hangs launch.sh forever (found at the"
+      print "    # F52 RG SP gate)."
+      print "    gt_dev_tmp=\"/tmp/gt-input-devices.$$\""
+      print "    gt_key_word=; gt_injs=0"
+      print "    if cat \"$gt_dev_file\" >\"$gt_dev_tmp\" 2>/dev/null; then"
+      print "        while IFS= read -r gt_line; do"
+      print "            case \"$gt_line\" in"
+      print "                \"I:\"*) gt_injs=0 ;;"
+      print "                \"H: Handlers=\"*js0*) gt_injs=1 ;;"
+      print "                \"B: KEY=\"*)"
+      print "                    if [ \"$gt_injs\" = 1 ]; then"
+      print "                        gt_w=${gt_line#B: KEY=}"
+      print "                        if [ $(($(echo \"$gt_w\" | wc -w))) -ge 5 ]; then"
+      print "                            gt_w=${gt_w% *}; gt_w=${gt_w% *}; gt_w=${gt_w% *}; gt_w=${gt_w% *}"
+      print "                            gt_key_word=${gt_w##* }"
+      print "                        else"
+      print "                            gt_key_word=short"
+      print "                        fi"
+      print "                        break"
+      print "                    fi ;;"
+      print "            esac"
+      print "        done < \"$gt_dev_tmp\""
+      print "    fi"
+      print "    rm -f \"$gt_dev_tmp\""
+      print "    case \"$gt_key_word\" in"
+      print "        dff000000000000)  GT_INPUT_CLASS=plain ;;"
+      print "        1fff000000000000) GT_INPUT_CLASS=sticks ;;"
+      print "        *)  GT_INPUT_CLASS=plain"
+      print "            echo \"gt-h700: unrecognized joystick key set [${gt_key_word:-none}] - using RG SP input tables; please run GT Probe and open an issue\" ;;"
       print "    esac"
+      print "    export GT_INPUT_CLASS"
+      print "    echo \"gt-h700: input class $GT_INPUT_CLASS (js0 key word ${gt_key_word:-none})\""
+      print "    # F51+F53 profile token: the exact SKU from RGXX_MODEL (RG34xxSP, RGSP, ...)"
+      print "    # first, then the family bucket NextUI puts in $DEVICE, then the RG SP default."
+      print "    gt_pm_device=; gt_pm_bucket="
+      print "    for gt_tok in \"$(printf %s \"${RGXX_MODEL:-}\" | tr A-Z a-z)\" \"${DEVICE:-}\"; do"
+      print "        case \"$gt_tok\" in"
+      print "            rgsp)                 gt_pm_device=rg34xx-h;    GT_PANEL_W=720; GT_PANEL_H=480 ;;"
+      print "            rg34xxsp)             gt_pm_device=rg34xx-sp;   GT_PANEL_W=720; GT_PANEL_H=480 ;;"
+      print "            rg35xxh)              gt_pm_device=rg35xx-h;    GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "            rg35xxplus|rg35xxpro) gt_pm_device=rg35xx-plus; GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "            rg35xxsp)             gt_pm_device=rg35xx-sp;   GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "            rg40xxh)              gt_pm_device=rg40xx-h;    GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "            rg40xxv)              gt_pm_device=rg40xx-v;    GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "            rg28xx)               gt_pm_device=rg28xx;      GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "            rgcubexx|cube)        gt_pm_device=rg34xx-h;    GT_PANEL_W=720; GT_PANEL_H=720 ;;"
+      print "            # family buckets: ambiguous between the stickless and the stick SKU -> refined below"
+      print "            rg34xx)               gt_pm_device=rg34xx-h;    GT_PANEL_W=720; GT_PANEL_H=480; gt_pm_bucket=rg34xx ;;"
+      print "            rg35xx)               gt_pm_device=rg35xx-plus; GT_PANEL_W=640; GT_PANEL_H=480; gt_pm_bucket=rg35xx ;;"
+      print "            rg40xx)               gt_pm_device=rg40xx-h;    GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "            *) continue ;;"
+      print "        esac"
+      print "        break"
+      print "    done"
+      print "    if [ -z \"$gt_pm_device\" ]; then  # unknown/absent tokens = the RG SP profile (pre-F51 behavior)"
+      print "        gt_pm_device=rg34xx-h; GT_PANEL_W=720; GT_PANEL_H=480; gt_pm_bucket=unknown"
+      print "    fi"
+      print "    # F53: the input class disambiguates the buckets (sticks present -> the stick SKU)"
+      print "    if [ \"$GT_INPUT_CLASS\" = sticks ]; then"
+      print "        case \"$gt_pm_bucket\" in"
+      print "            rg34xx|unknown) gt_pm_device=rg34xx-sp ;;"
+      print "            rg35xx)         gt_pm_device=rg35xx-h ;;"
+      print "        esac"
+      print "    fi"
+      print "    # F53: use-stickless hatch -> ports see ANALOG_STICKS=0 (device_info honors GT_ANALOG_STICKS);"
+      print "    # the input tables are untouched, and harbourmaster keeps the true profile."
+      print "    if [ -f \"$USERDATA_PATH/PORTS-portmaster/use-stickless\" ]; then"
+      print "        export GT_ANALOG_STICKS=0"
+      print "        echo \"gt-h700: use-stickless present - ports will see ANALOG_STICKS=0\""
+      print "    fi"
       print "    echo \"$gt_pm_device\" >\"$HOME/.config/.DEVICE\""
       print "    export GT_PANEL_W GT_PANEL_H"
       print "fi"
@@ -661,6 +739,8 @@ edit_portmaster_launch() { # $1=launch.sh path
       print "    # gt-h700-port-remap / gt-h700-hud (F25/F26/F34)"
       print "    if [ \"$PLATFORM\" = \"h700\" ]; then"
       print "        export LD_PRELOAD=\"$PAK_DIR/lib/gt-input-remap.so${LD_PRELOAD:+:$LD_PRELOAD}\""
+      print "        # gt-h700-input-debug (F52): touch use-input-debug to trace every remap/synth into PORTS.txt"
+      print "        [ -f \"$USERDATA_PATH/PORTS-portmaster/use-input-debug\" ] && export GT_INPUT_REMAP_DEBUG=1"
       print "        # input remap stays opt-in (allowlist): TrimUI index remap + gptk synthesis"
       print "        if grep -Fxq \"$ROM_NAME\" \"$PAK_DIR/files/gt-remap-ports.txt\" 2>/dev/null \\"
       print "            || grep -Fxq \"$ROM_NAME\" \"$USERDATA_PATH/PORTS-portmaster/use-remap-ports\" 2>/dev/null; then"
@@ -1027,6 +1107,21 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-controller-db-class: F52 — stick-equipped devices install the
+  # per-class DB copy (files/gamecontrollerdb_<layout>_sticks.txt, staged by
+  # stage_controllerdb_classes). GT_INPUT_CLASS comes from the device-pin
+  # block on the common path, so the GUI and run_port both inherit it; absent
+  # or plain = the unchanged upstream path.
+  if ! grep -q 'gt-h700-controller-db-class' "$f"; then
+    awk '$0 == "    src=\"$PAK_DIR/files/gamecontrollerdb_$layout.txt\"" {
+      print "    # gt-h700-controller-db-class (F52): stick devices get the per-class DB copy"
+      print "    gt_db_suffix=; [ \"${GT_INPUT_CLASS:-plain}\" = sticks ] && gt_db_suffix=_sticks"
+      print "    src=\"$PAK_DIR/files/gamecontrollerdb_${layout}${gt_db_suffix}.txt\""
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-controller-layout-platform: F48 — patch PlatformTrimUI.loaded() so the
   # GUI's confirm/back follows config.json (same key launch.sh reads for ports).
   if ! grep -q 'gt-h700-controller-layout-platform' "$f"; then
@@ -1092,6 +1187,15 @@ edit_portmaster_device_info() { # $1=PortMaster/device_info.txt path
       -e 's|^    DISPLAY_HEIGHT=480$|    DISPLAY_HEIGHT=${GT_PANEL_H:-480}  # gt-h700-fallback|' \
       "$f"
     rm -f "$f.bak"
+  fi
+
+  # gt-h700-stickless: F53 — the use-stickless hatch. launch.sh exports
+  # GT_ANALOG_STICKS=0 when the flag file exists; apply it AFTER upstream's own
+  # per-device case so every port launcher picks its stickless gptk again.
+  if ! grep -q 'gt-h700-stickless' "$f"; then
+    awk '$0 == "export ANALOG_STICKS" {
+      print "ANALOG_STICKS=${GT_ANALOG_STICKS:-$ANALOG_STICKS}  # gt-h700-stickless (F53): use-stickless flag override"
+    } { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 }
 
@@ -1190,6 +1294,22 @@ append_controllerdb() { # $1=repo mapping file $2=target gamecontrollerdb
   done
 }
 
+stage_controllerdb_classes() { # $1=dir holding gamecontrollerdb_<layout>.txt $2=repo mapping dir
+  # F52: stick-equipped devices need their own controller-DB line but share the
+  # RG SP's GUID, so each layout gets a per-class COPY: <layout>_sticks.txt =
+  # the upstream DB + the stick line. ORDER MATTERS: the copy must fork from the
+  # PRISTINE upstream file BEFORE the plain RG SP line is appended, because
+  # append_controllerdb dedupes by GUID and would otherwise skip the stick line.
+  # On a restage the copy already exists (not re-forked) and both appends dedupe.
+  for gt_l in xbox nintendo; do
+    base="$1/gamecontrollerdb_$gt_l.txt"; sticks="$1/gamecontrollerdb_${gt_l}_sticks.txt"
+    [ -f "$base" ] || continue
+    [ -f "$sticks" ] || cp -f "$base" "$sticks"
+    append_controllerdb "$2/gamecontrollerdb-h700-$gt_l.txt" "$base"
+    append_controllerdb "$2/gamecontrollerdb-h700-sticks-$gt_l.txt" "$sticks"
+  done
+}
+
 if [ -n "${GT_STAGE_EDIT_ONLY:-}" ]; then
   cmd=${1:?usage: build-pak.sh portmaster}
   case "$cmd" in
@@ -1206,12 +1326,7 @@ if [ -n "${GT_STAGE_EDIT_ONLY:-}" ]; then
         edit_portmaster_control "$GT_STAGE_EDIT_ONLY/control.txt"
       fi
       pm_db_dir=${GT_PM_DB_DIR:-$ASSETS}
-      if [ -f "$GT_STAGE_EDIT_ONLY/gamecontrollerdb_xbox.txt" ]; then
-        append_controllerdb "$pm_db_dir/gamecontrollerdb-h700-xbox.txt" "$GT_STAGE_EDIT_ONLY/gamecontrollerdb_xbox.txt"
-      fi
-      if [ -f "$GT_STAGE_EDIT_ONLY/gamecontrollerdb_nintendo.txt" ]; then
-        append_controllerdb "$pm_db_dir/gamecontrollerdb-h700-nintendo.txt" "$GT_STAGE_EDIT_ONLY/gamecontrollerdb_nintendo.txt"
-      fi
+      stage_controllerdb_classes "$GT_STAGE_EDIT_ONLY" "$pm_db_dir"
       strip_weston_runtime "$GT_STAGE_EDIT_ONLY"
       ;;
     *) echo "usage: build-pak.sh portmaster" >&2; exit 1 ;;
@@ -1394,8 +1509,7 @@ do_portmaster() {
   edit_portmaster_device_info "$assembled/PortMaster/device_info.txt"
   edit_portmaster_pugwash "$assembled/PortMaster/pugwash"
   edit_portmaster_control "$assembled/files/control.txt"
-  append_controllerdb "$ASSETS/gamecontrollerdb-h700-xbox.txt" "$assembled/files/gamecontrollerdb_xbox.txt"
-  append_controllerdb "$ASSETS/gamecontrollerdb-h700-nintendo.txt" "$assembled/files/gamecontrollerdb_nintendo.txt"
+  stage_controllerdb_classes "$assembled/files" "$ASSETS"
 
   # F48: stage the layout resolver run_port/run_portmaster_gui call into.
   cp -f "$ASSETS/gt-controller-layout.sh" "$assembled/files/gt-controller-layout.sh"

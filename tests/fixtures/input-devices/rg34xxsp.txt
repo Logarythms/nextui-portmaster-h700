@@ -1,0 +1,32 @@
+I: Bus=0000 Vendor=0000 Product=0000 Version=0000
+N: Name="axp2202-pek"
+P: Phys=m1kbd/input2
+S: Sysfs=/devices/platform/soc/twi5/i2c-5/5-0034/axp2101-pek.0/input/input0
+U: Uniq=
+H: Handlers=kbd event0 
+B: PROP=0
+B: EV=100003
+B: KEY=12c00000000000 0
+
+I: Bus=0019 Vendor=0001 Product=0001 Version=0100
+N: Name="ANBERNIC-keys"
+P: Phys=gpio-keys-polled/input0
+S: Sysfs=/devices/platform/soc/soc@03000000:gpio_keys/input/input1
+U: Uniq=
+H: Handlers=kbd js0 event1 
+B: PROP=0
+B: EV=20000b
+B: KEY=400000000 1fff000000000000 0 0 c000000000000 2
+B: ABS=3003c
+B: FF=107030000 0
+
+I: Bus=0019 Vendor=0001 Product=0001 Version=0100
+N: Name="dierct-keys-polled"
+P: Phys=dierct-keys-polled/input0
+S: Sysfs=/devices/platform/dierct-keys-polled/input/input2
+U: Uniq=
+H: Handlers=kbd event2 
+B: PROP=0
+B: EV=3
+B: KEY=c378000000000 c042e2100000
+

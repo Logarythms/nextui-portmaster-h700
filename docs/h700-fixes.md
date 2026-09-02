@@ -761,6 +761,8 @@ belt-and-braces.
 - F49: Cave Story (Evo) now follows the resolved controller layout — its `settings.dat` face-button bindings are conformed on launch, byte-patched and idempotent
 - F50: the controller layout can now be set per game from that port's own info screen in the PortMaster GUI, and the global toggle moved up to be visible without scrolling; self-configuring ports (Balatro-class) show a disclaimer instead, by design
 - F51: the RG SP-specific hardware constants are now device-keyed — other h700 NextUI devices (RG34XXSP, RG35XX family, RG40XX family) get their own PortMaster profile, panel geometry, Sonic screen fit and sleep trigger (still unverified on those devices)
+- F52: stick-equipped h700 devices with the RG34XXSP key set (two sticks, L3/R3 clicks) get the matching controller tables — the pak reads the input node's key set at launch and picks the measured mapping for it, fixing triggers, stick clicks and a Menu-button echo that swallowed R2 in every port; anything else falls back to the RG SP tables plus a warning; `use-input-debug` flag file traces the input shim for reports
+- F53: analog sticks (Experimental — not yet verified on hardware) — sticks mapped in the controller DB for native ports and the GUI, stick-to-keys synthesis in the input translator with gptokeyb's own keys and defaults, a truthful 2-stick device profile, and a `use-stickless` flag file to fall back to d-pad control schemes
 
 **Upgrading from 0.3.2:** unzip-over (self-healing); no manual steps. A
 `weston_pkg_0.2.squashfs` already in `PortMaster/libs/` is left as is.
@@ -1599,8 +1601,94 @@ hardware. F51 keys them on NextUI's `$DEVICE` SKU token instead:
   pattern as the shim's Menu-device scan), falling back to event0.
 
 Only the RG SP is device-verified; the other arms follow the NextUI-h700
-wiki's token list. Deliberately out of scope: the controller mapping and the
-shim's index table have only ever been measured on the RG SP (stick-equipped
-devices additionally get no stick axes — the measured mapping carries none),
-RG28XX's rotated panel is unaddressed, and the ALSA suspend-proxy chain is a
-copy of the RG SP's stock output chain.
+wiki's token list. The controller tables became device-keyed in F52/F53
+(below). Still out of scope: RG28XX's rotated panel, and the ALSA
+suspend-proxy chain is a copy of the RG SP's stock output chain.
+
+## Stick-equipped devices: input class and per-class tables (F52)
+
+Every button table in the pak was measured on the RG SP: the two SDL
+controller-DB lines, the shim's raw-index remap, the HUD's Menu-echo
+swallow, and the F45 evdev-code table. The first non-RG-SP probe log — an
+RG34XXSP, captured with the GT Probe pak on NextUI's own SDL — showed the
+difference is small and exact. Its `ANBERNIC-keys` node carries **two extra
+evdev codes**, 313 (`BTN_TR2`, the L3 click) and 316 (`BTN_MODE`, R3).
+NextUI's SDL enumerates the node's codes in ascending order after the three
+keyboard-type codes (ESC, Vol−, Vol+ at b0–b2), so those two codes push
+L2/R2 from b12/b13 to **b13/b14**, Menu's `KEY_GOTO` echo from b14 to
+**b16**, and put L3/R3 at b12/b15; faces, shoulders, Select, Start, Menu
+and the hat d-pad are identical. The SDL GUID is identical too, so a
+controller-DB line cannot tell the devices apart.
+
+What a stick device got from the pak before F52: L3 acted as L2, L2 as R2,
+and **R2 was dead in every port** — the HUD's Menu intercept, preloaded
+everywhere, swallowed raw index 14 unconditionally because on the RG SP that
+is the Menu echo.
+
+- **Input class.** `launch.sh` reads `/proc/bus/input/devices`, takes the
+  `js0` record's `B: KEY=` bitmap word for codes 256–319 (fifth word from
+  the right) and classifies it: `dff000000000000` = `plain` (RG SP),
+  `1fff000000000000` = `sticks`. It exports `GT_INPUT_CLASS` on the common
+  path and logs `gt-h700: input class <class> (js0 key word <word>)`.
+  Anything else — missing node, unrecognized word — is `plain` plus a
+  warning asking for a probe run: exactly the pre-F52 behavior. GT Probe,
+  the measurement pak the warning names, is not published yet — an issue
+  quoting the `gt-h700:` lines (the bracketed key word in particular) is
+  what actually adds a device. (The RG40XX-V, listed by harbourmaster with
+  one stick, may be such a third layout.) It reads a `cat` copy of the proc
+  file, never the file itself: busybox `read` polls fd 0 before every byte,
+  and `/proc/bus/input/devices` only polls readable on input hotplug, so a
+  direct `read` loop hung `launch.sh` forever (found at the RG SP gate).
+- **Controller DB per class.** The build stages four files:
+  `gamecontrollerdb_{nintendo,xbox}.txt` (unchanged) and
+  `gamecontrollerdb_{nintendo,xbox}_sticks.txt` — the same upstream DB with
+  the measured stick line (`lefttrigger:b13,righttrigger:b14,leftstick:b12,
+  rightstick:b15,leftx:a0,lefty:a1,rightx:a2,righty:a3`). Upstream's
+  `set_controller_layout` picks the `_sticks` copy when the class says so;
+  the F48 layout choice composes with it.
+- **Shim tables.** `gt-input-remap.so` loads the class once and switches its
+  raw-index remap (stick table: 12→L3 slot 9, 13→L2, 14→R2, 15→R3 slot 12,
+  park at 17) and the Menu-echo swallow index (14 → 16). The F45 evdev path
+  now maps evdev code → slot directly, which is device-independent by
+  construction. gptk `l3`/`r3` names bind the stick clicks.
+- **Reporting switch.** A `use-input-debug` flag file exports the shim's
+  debug variable for every port, so a report carries the full trace.
+
+Wording for users and the volunteer-gate decision: stick support ships
+**experimental**, gated only by the RG SP regression run; the design and
+measured tables are in `docs/superpowers/specs/2026-09-01-stick-device-support-design.md`.
+
+## Stick-equipped devices: analog sticks as keys, and a truthful profile (F53)
+
+With the buttons right, two things kept stick devices second-class: the
+shim ignored every analog line in a gptk (the RG SP has no sticks), and the
+F51 profile pinned the `rg34xx` family bucket to the stickless `rg34xx-h`,
+so device_info reported zero sticks and ports picked their d-pad control
+schemes.
+
+- **Analog synthesis** (shim, stick class only, gptk loaded). Mirrors
+  gptokeyb (PortsMaster/gptokeyb source): the eight `left_analog_*` /
+  `right_analog_*` lines, gptokeyb's built-in defaults when a line is absent
+  (left W/S/A/D, right End/Home/Left/Right), a present line with an unknown
+  name or the `\"` placeholder clears the default, a `mouse_movement_*`
+  value marks that stick mouse-driven and it synthesizes nothing, and the
+  unified `deadzone` (default 15000, deflected when |value| ≥ deadzone) is
+  honored. Axes a0–a3 are left X/Y, right X/Y with negative = up/left. Each
+  axis keeps its last direction; edges go through the same
+  release-before-press helper the evdev d-pad uses, the first key replaces
+  the axis event and the rest ride the existing stash, and every key is
+  mirrored into the polled keystate (F31), so polling games see the stick
+  too. Unmapped axes pass through untouched.
+- **Profile.** The pin tries the exact SKU from `RGXX_MODEL` first (this
+  NextUI build exports it: `RGSP`, `RG34xxSP`, …), then the `DEVICE`
+  bucket, then the RG SP default; the input class upgrades the ambiguous
+  buckets (`rg34xx` + sticks → `rg34xx-sp`, `rg35xx` + sticks → `rg35xx-h`,
+  unknown + sticks → `rg34xx-sp`). Exact SKUs are never overridden.
+- **Hatch.** `use-stickless` exports `GT_ANALOG_STICKS=0`, which
+  device_info applies after upstream's own per-device case — ports see zero
+  sticks and pick their d-pad schemes again, while harbourmaster keeps the
+  true profile and the button tables are untouched.
+
+Not done, deliberately: mouse emulation, deadzone modes/scaling, key
+repeat and hold-state modifiers in the shim; a third key layout (RG40XX-V)
+until a probe log exists.

@@ -13,6 +13,8 @@
 #   second emission, KEY_GOTO — would otherwise double-fire)
 # The test compiles the shim NATIVELY with -DGT_REMAP_TEST, which strips the
 # SDL/dlfcn interposer half and exposes a main() that asserts the table.
+# F52: a second measured table (RG34XXSP class, GT_INPUT_CLASS=sticks) is
+# asserted alongside; the evdev path maps code→slot directly.
 cc -DGT_REMAP_TEST -O2 -o "$SANDBOX/remap-test" "$ROOT/assets/gt-input-remap.c"
 out=$("$SANDBOX/remap-test")
 assert_eq "$out" "remap ok" "input-remap table"
@@ -51,6 +53,15 @@ gate=$(grep -n 'gt-remap-ports.txt' "$work/launch.sh" | head -1 | cut -d: -f1)
 ir=$(grep -n 'export GT_INPUT_REMAP=1' "$work/launch.sh" | head -1 | cut -d: -f1)
 [ "$lp" -lt "$gate" ] || { echo "LD_PRELOAD must precede (be outside) the remap allowlist gate"; exit 1; }
 [ "$gate" -lt "$ir" ] || { echo "GT_INPUT_REMAP must be inside the allowlist gate"; exit 1; }
+# F52: a flag file turns the shim trace on for every port (user reports)
+assert_contains "$work/launch.sh" 'gt-h700-input-debug'
+# brackets escaped for grep BRE (unescaped '[ -f ... ]' parses as a character
+# class and can error out with "invalid character range" — see test-02-syslib.sh)
+# shellcheck disable=SC2016
+assert_contains "$work/launch.sh" '\[ -f "$USERDATA_PATH/PORTS-portmaster/use-input-debug" \] && export GT_INPUT_REMAP_DEBUG=1'
+dbg=$(grep -n 'use-input-debug' "$work/launch.sh" | head -1 | cut -d: -f1)
+[ "$lp" -lt "$dbg" ] || { echo "input-debug switch must follow the LD_PRELOAD export"; exit 1; }
+[ "$dbg" -lt "$gate" ] || { echo "input-debug switch must precede the remap allowlist gate"; exit 1; }
 # placement: inside run_port, immediately guarding the port exec — after the
 # controller-layout selection, before the bash invocation of the port script
 layout_line=$(grep -Fn 'set_controller_layout "$gt_layout"' "$work/launch.sh" | head -1 | cut -d: -f1)

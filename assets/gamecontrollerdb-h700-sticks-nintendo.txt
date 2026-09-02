@@ -1,0 +1,9 @@
+# Stick-equipped h700 NextUI devices (RG34XXSP class) SDL controller mapping —
+# nintendo layout (a/b and x/y swapped vs xbox). Same GUID as the RG SP line
+# (gamecontrollerdb-h700-nintendo.txt) — launch.sh picks the file per input
+# class (F52), never by GUID. MEASURED from the RG34XXSP volunteer probe trace
+# (2026-09-01, gt-joyprobe on NextUI's own SDL 2.28.5): the L3/R3 clicks
+# (evdev 313/316) shift L2/R2 to b13/b14 and Menu's KEY_GOTO echo to b16;
+# sticks a0..a3 = leftx lefty rightx righty, up/left = negative. One SDL
+# mapping line per row; staging appends data lines verbatim (GUID-deduped).
+19000000010000000100000000010000,Anbernic h700 Gamepad (sticks),a:b3,b:b4,x:b6,y:b5,back:b9,start:b10,guide:b11,leftshoulder:b7,rightshoulder:b8,lefttrigger:b13,righttrigger:b14,leftstick:b12,rightstick:b15,leftx:a0,lefty:a1,rightx:a2,righty:a3,dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,platform:Linux,
