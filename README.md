@@ -5,7 +5,7 @@
 ## ⚠️ Read this first
 
 - **Experimental. Provided as-is, with no support and no warranty — use at your own risk.**
-- **Only the Anbernic RG SP is confirmed working.** Other devices may not work at all.
+- **Only the Anbernic RG SP is confirmed working.** Since 0.4.0 the pak also adapts itself to other h700 NextUI devices (RG34XX SP, the RG35XX and RG40XX families, RG CubeXX), but none of them has been tested — see [Other h700 NextUI devices](#other-h700-nextui-devices).
 - **Do not ask the official PortMaster team for support.** This is an unofficial, modified build — open an issue here instead.
 - **Made with AI assistance.**
 
@@ -31,14 +31,14 @@ Unzip the new `PORTS.pak.zip` over the SD card the same way you installed it, re
 - Your installed ports, game files, saves, and downloaded runtimes are not part of the zip and stay untouched.
 - The first launch after upgrading takes about a minute longer (the pak re-unpacks and re-patches its internals) — that's expected.
 - This also repairs an install damaged by accepting the old update prompt on v0.1.0 — including the "every ports list is empty and Featured claims it needs internet" state that damage can leave behind.
+- Coming from 0.3.2 or earlier, the default button layout changes from Xbox to Nintendo (A / B / X / Y as printed on the device). If you preferred the old one, switch it back — see [Changing the button layout](#changing-the-button-layout).
 
 ## Using it
 
 - **PortMaster's self-update is disabled by this build.** Updating would replace the h700-patched runtime with the official one, which won't run on the RG SP — so the update prompt never appears, and even a manually triggered update is a no-op. New pak versions come as releases of this repository instead.
 - **Buttons default to the Nintendo layout** (A / B / X / Y match the
-  printed labels). Changeable globally from PortMaster's own **Options**
-  menu, or per game from that port's own info screen (press **X**) — see
-  [docs/h700-fixes.md](docs/h700-fixes.md) for details.
+  printed labels). You can switch to the Xbox layout for all games or for a
+  single game — see [Changing the button layout](#changing-the-button-layout).
 - **Tap Menu once during a game to show a battery/time/volume/brightness
   overlay; tap it again to hide it.** Holding Menu to adjust brightness
   still works as before. A couple of ports are exceptions — see
@@ -48,6 +48,27 @@ Unzip the new `PORTS.pak.zip` over the SD card the same way you installed it, re
   intact. On by default for every port — see
   [docs/h700-fixes.md](docs/h700-fixes.md) to opt a game out.
 - Not every port runs — see below.
+
+## Changing the button layout
+
+Games can use either face-button layout:
+
+- **Nintendo** — A / B / X / Y as printed on the device. The default.
+- **Xbox** — A and B swapped, X and Y swapped, compared to the printed labels.
+
+**For all games:** open PortMaster → **Options** → **Controller Layout** and
+pick one. It takes effect the next time you start a game. This setting also
+applies to PortMaster itself: its own confirm and back buttons follow the
+layout from the next time you open it.
+
+**For a single game:** open PortMaster → **Manage Ports**, select the game,
+and press **X** to cycle through **Default / Xbox / Nintendo**. *Default*
+means the game follows the global setting.
+
+A few games manage their own button mapping in-game and ignore this setting
+— Balatro is one; PortMaster shows a note on the game's page when that's the
+case. Cave Story (Evo) keeps its own settings file, but the pak keeps its
+face buttons in line with your chosen layout.
 
 ## Confirmed working games
 
@@ -61,6 +82,7 @@ Confirmed working out of the box on the RG SP:
 - [Cave Story (Evo)](https://portmaster.games/detail.html?name=cave.story-evo) (the *Evo* version — **not** "Cave Story lr", which can't run here; its controls and screen fit are corrected for the RG SP automatically, and its face buttons follow your chosen controller layout — see below)
 - [Celeste](https://portmaster.games/detail.html?name=celeste)
 - [Deltarune](https://portmaster.games/detail.html?name=deltarune)
+- [Dokimon: Quest](https://portmaster.games/detail.html?name=dokimon) (a "GMLive folder not found. Skipping patch." line while it patches on first launch is harmless — the patch still completes)
 - [Downwell](https://portmaster.games/detail.html?name=downwell)
 - [Lasagna Boy Classic](https://portmaster.games/detail.html?name=lasagnaboyclassic) (via the built-in input translator — automatic)
 - [Mina the Hollower](https://portmaster.games/detail.html?name=mina) (its Metal→GLES engine is switched to native OpenGL ES 3 automatically — see below)
@@ -92,35 +114,35 @@ Details in [`docs/h700-fixes.md`](docs/h700-fixes.md#ports-this-platform-cant-ru
 
 ## Other h700 NextUI devices
 
-Only the RG SP is verified in hand. The pak adapts its hardware profile,
-screen geometry and sleep trigger to the device it runs on (RG34XXSP, the
-RG35XX and RG40XX families, CubeXX), and since 0.4.0 it also adapts its
-**controller tables**: at launch it reads which buttons the device's input
-node actually has and picks the matching measured mapping, so triggers,
-stick clicks and the Menu button behave on stick-equipped devices too.
+Only the RG SP has been tested. Other h700 devices running NextUI (RG34XX SP,
+the RG35XX and RG40XX families, RG CubeXX) should work, but are unverified:
 
-**Analog sticks. Experimental — not yet verified on hardware.** On devices
-with sticks the pak installs a controller mapping that carries both sticks
-(native SDL ports and the PortMaster GUI use them directly), and the
-built-in input translator turns stick movement into the keys a port's
-`.gptk` expects — the same `left_analog_*` / `right_analog_*` lines and
-defaults gptokeyb uses. The device profile then reports two analog sticks,
-so ports pick their stick control schemes. None of this has been run on
-stick hardware yet: the tables come from a volunteer's RG34XXSP probe log.
-If a port's stick scheme misbehaves, create an empty file `use-stickless`
-in `.userdata/h700/PORTS-portmaster/` on the SD card — ports go back to
-their d-pad schemes while buttons and native stick support stay correct.
+- The pak detects the device at launch and picks its screen size, sleep
+  button, hardware profile and controller mapping.
+- Devices with analog sticks get a mapping that includes both sticks, and the
+  right buttons for triggers, stick clicks and Menu.
 
-**Reporting.** Create an empty file `use-input-debug` in the same folder,
-launch the port, then open an issue with `.userdata/h700/logs/PORTS.txt`
-attached. It carries the `gt-h700: input class …` line (which table was
-chosen and why), the `DEVICE INFO` line, and the button and stick events the
-translator forwarded to the game (Menu presses are consumed by the HUD layer
-and don't appear). If the log says `unrecognized joystick key set [...]`,
-quote that line's bracketed key word in the issue — it's what we need to
-add your device (the GT Probe measurement pak the log line mentions isn't
-published yet, so the log lines above are enough). Reports from any h700
-device we haven't verified are welcome — open an issue with the result.
+**Analog sticks — experimental, not yet tested on real hardware.**
+
+- Native ports and the PortMaster app can use both sticks directly.
+- Keyboard-style ports get stick movement translated to keys, the same way
+  gptokeyb does it on other devices.
+- Ports see a two-stick device and may pick their stick-based control scheme.
+- If a game's stick controls misbehave: create an empty file named
+  `use-stickless` in `.userdata/h700/PORTS-portmaster/` on the SD card. Ports
+  go back to their d-pad schemes; buttons and native stick support are
+  unaffected.
+
+**Reporting from an untested device** — issues are welcome, working or not:
+
+1. Create an empty file named `use-input-debug` in
+   `.userdata/h700/PORTS-portmaster/` on the SD card.
+2. Start a port.
+3. Open an issue and attach `.userdata/h700/logs/PORTS.txt` right after (the
+   log only keeps the last launch). It shows which device and controller
+   mapping the pak picked, and the button and stick events it forwarded.
+4. If the log contains `unrecognized joystick key set [...]`, quote that line
+   — it's what's needed to add your device.
 
 ## What works
 
@@ -149,7 +171,7 @@ make pak     # builds dist/Emus/h700/PORTS.pak.zip from pinned, checksum-verifie
 make test    # runs the shell test suite
 ```
 
-The `LD_PRELOAD` shims (input-remap, FMOD-audio, and GLES-profile) ship prebuilt in `assets/`; rebuilding them (`make shim`) needs Docker.
+The `LD_PRELOAD` shims (input-remap, FMOD-audio, GLES-profile, SDL-audio-init), the sleep watcher and the ALSA suspend-proxy ship prebuilt in `assets/`; rebuilding them (`make shim`) needs Docker.
 
 ## Fixing games that ignore your buttons
 
@@ -165,7 +187,9 @@ that does the same job from the inside.
 should press which key — for Tunics! that's A = Space, Start = W, d-pad =
 arrow keys, and so on. When the translator is enabled for a game, that game's
 own mapping file is picked up automatically. You never have to write a
-mapping yourself.
+mapping yourself. On a device with analog sticks, the translator also turns
+stick movement into the keys the mapping file names (experimental — see
+[Other h700 NextUI devices](#other-h700-nextui-devices)).
 
 Games on the built-in list need no setup at all — currently **Tunics!**,
 **BYTEPATH**, **Lasagna Boy Classic**, **Road Invaders**, and
@@ -199,9 +223,9 @@ game's name** — it can then join the built-in list, and the next release
 fixes it for everyone out of the box.
 
 Two honest limitations: a game with no `.gptk` mapping file only gets its
-button numbering fixed (that alone cures some games); and a few games read
-the keyboard in a way the translator can't reach yet ("state polling") —
-those stay broken for now.
+button numbering fixed (that alone cures some games); and the rare game that
+polls the raw joystick's button state directly, instead of reading events,
+stays broken for now.
 
 <details>
 <summary>Technical details</summary>
