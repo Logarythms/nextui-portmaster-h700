@@ -8,9 +8,10 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (F1–F53) below match the internal numbering used while these were
+Fix IDs (up to F57) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
-issue report can refer to a specific one. A closing section records the ports
+issue report can refer to a specific one. The numbering has gaps — some IDs are
+reserved or live on other branches until release. A closing section records the ports
 that this platform genuinely can't run.
 
 ## Missing shared libraries ("the h700 lib gap")
@@ -1692,3 +1693,36 @@ schemes.
 Not done, deliberately: mouse emulation, deadzone modes/scaling, key
 repeat and hold-state modifiers in the shim; a third key layout (RG40XX-V)
 until a probe log exists.
+
+## In-game HUD: brightness and volume went blank after the rc10 update (F57)
+
+The status overlay (F34/F35) reads live brightness and volume from NextUI's
+shared settings block at `/dev/shm/SharedSettings`; battery comes from sysfs
+and the clock from libc, so those two are independent of that file. keymon
+writes the block, and the HUD reads two `int32` fields from it — brightness at
+byte offset 4, volume at byte offset 16 — offsets first confirmed on hardware
+in 2026-08 by nudging each setting and re-dumping.
+
+NextUI `h700-rc10` changed the size of that block. The rc8-era build exposed a
+132-byte structure; rc10 exposes a 64-byte one (dumped live: a smaller layout
+keymon writes). The HUD's decoder guarded on the *exact* old size (`len < 132`
+→ give up), so against the 64-byte block it bailed on every sample and reported
+both values as unknown — the brightness and volume gauges went dead while
+battery and time kept updating. That asymmetry (only the two SharedSettings-fed
+values break) is the signature of this regression.
+
+The two fields did not move — re-confirmed on an rc10 device by nudging:
+brightness still at offset 4 (9 → 0 on full-down), volume still at offset 16
+(0 → 11 at about half). Only the block's overall size changed. Fix: the decoder
+now guards on a *minimum* length that covers the volume `int32`
+(`GT_SS_MIN_LEN = offset 16 + 4 = 20 bytes`) rather than the exact struct size.
+It accepts the 64-byte rc10 block and the 132-byte rc8 block alike (reading the
+same two offsets in each), stays correct across a future resize as long as
+those offsets hold, and the minimum also prevents an out-of-bounds read of the
+volume field on a truncated block. The read buffer is unchanged; a smaller file
+is simply a short read.
+
+Out of scope: NextUI tracks speaker and headphone volume as separate fields
+gated by a jack flag; the HUD reads the speaker field (offset 16) as it always
+has, so with headphones plugged the gauge shows the speaker level. That was the
+pre-existing behavior and is unchanged here.

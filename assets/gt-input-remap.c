@@ -447,14 +447,19 @@ static void gt_merge_keystate(unsigned char *out, const unsigned char *real,
 }
 
 /* ---- HUD sampling + formatting (no SDL/GL; host-testable) -------------- */
-/* NextUI /dev/shm/SharedSettings: 33 x int32. Offsets are byte offsets.
- * VOL/BRI indices are the project's current read of the layout (idx1=volume
- * 0-20, and brightness one of idx2..4); offsets are a best guess, confirmed
- * on-device (see the device-gate task) by nudging each setting and
- * re-dumping. Units: volume 0-20, brightness 0-10 (NextUI). */
-#define GT_SS_LEN            132
-#define GT_SS_OFF_BRIGHTNESS 4     /* int32 idx1 (0-10) — device-confirmed 2026-08-26 */
-#define GT_SS_OFF_VOLUME     16    /* int32 idx4 (0-20) — device-confirmed 2026-08-26 */
+/* NextUI /dev/shm/SharedSettings: an array of int32 byte-offset fields.
+ * brightness = idx1 (offset 4), volume = idx4 (offset 16); both device-
+ * confirmed 2026-08-26 (rc8, 132-byte block) AND re-confirmed 2026-09-18
+ * (h700-rc10, 64-byte block) by nudging each setting and re-dumping — the two
+ * fields kept their offsets across the shrink. Units: volume 0-20, brightness
+ * 0-10 (NextUI). GT_SS_LEN is only the read-buffer upper bound; the DECODE
+ * guard is GT_SS_MIN_LEN, the minimum that still covers the volume int32, so a
+ * build that resizes the block (rc10 shrank it to 64) keeps working as long as
+ * brightness@4 / volume@16 hold. */
+#define GT_SS_LEN            132   /* read-buffer cap (largest block seen) */
+#define GT_SS_OFF_BRIGHTNESS 4     /* int32 idx1 (0-10) */
+#define GT_SS_OFF_VOLUME     16    /* int32 idx4 (0-20) */
+#define GT_SS_MIN_LEN        (GT_SS_OFF_VOLUME + 4)  /* bytes needed through volume */
 #define GT_SS_VOLUME_MAX     20
 #define GT_SS_BRIGHTNESS_MAX 10
 
@@ -473,7 +478,7 @@ static int gt_rd_i32(const unsigned char *b, int off) {
 
 /* Decode volume+brightness from a SharedSettings buffer. Returns 1 on success. */
 static int gt_shared_settings_decode(const unsigned char *buf, int len, gt_metrics *m) {
-    if (!buf || len < GT_SS_LEN) { m->volume = m->brightness = -1; m->valid = 0; return 0; }
+    if (!buf || len < GT_SS_MIN_LEN) { m->volume = m->brightness = -1; m->valid = 0; return 0; }
     m->volume = gt_rd_i32(buf, GT_SS_OFF_VOLUME);
     m->brightness = gt_rd_i32(buf, GT_SS_OFF_BRIGHTNESS);
     if (m->volume < 0) m->volume = 0; if (m->volume > GT_SS_VOLUME_MAX) m->volume = GT_SS_VOLUME_MAX;
@@ -1001,6 +1006,15 @@ int main(void) {
         gt_metrics m; memset(&m, 0, sizeof m);
         if (!gt_shared_settings_decode(ss, GT_SS_LEN, &m)) return fail("ss decode");
         if (m.volume != 10 || m.brightness != 7) return fail("ss values");
+        /* F57: NextUI h700-rc10 shrank /dev/shm/SharedSettings to 64 bytes.
+         * Decode must succeed on any buffer that reaches through the volume
+         * int32 — the old exact-132 guard rejected the 64-byte block and left
+         * both gauges dead. */
+        if (!gt_shared_settings_decode(ss, 64, &m)) return fail("64-byte (rc10) layout must decode");
+        if (m.volume != 10 || m.brightness != 7) return fail("64-byte ss values");
+        /* boundary: a buffer that stops before the volume int32 ends must fail
+         * (guarding against an out-of-bounds read of the volume field). */
+        if (!gt_shared_settings_decode(ss, GT_SS_OFF_VOLUME + 3, &m)) {} else return fail("sub-volume buf must fail");
         if (!gt_shared_settings_decode(ss, 4, &m)) {} else return fail("short buf must fail");
     }
     /* HUD: battery + time text formatters (pure) */
