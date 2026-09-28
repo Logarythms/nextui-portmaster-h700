@@ -12,16 +12,12 @@ cp "$TROOT/fixtures/portmaster-pak-skeleton/device_info.txt" "$work/device_info.
 cp "$TROOT/fixtures/portmaster-pak-skeleton/gamecontrollerdb_xbox.txt" "$work/gamecontrollerdb_xbox.txt"
 cp "$TROOT/fixtures/portmaster-pak-skeleton/gamecontrollerdb_nintendo.txt" "$work/gamecontrollerdb_nintendo.txt"
 
-# mapping source with one real-shaped line, to prove the append path
+# mapping source with one real-shaped line per layout, to prove the append path
 dbdir="$SANDBOX/pmdb"; mkdir -p "$dbdir"
-printf '%s\n' '# test mapping' '190000004b4800000111000000010000,RG SP Gamepad,a:b1,b:b0,platform:Linux,' \
+printf '%s\n' '# test mapping' '19000000010000000100000000016e01,ANBERNIC-keys,a:b0,b:b1,platform:Linux,' \
   > "$dbdir/gamecontrollerdb-h700-xbox.txt"
-printf '%s\n' '# test mapping' '190000004b4800000111000000010000,RG SP Gamepad,a:b0,b:b1,platform:Linux,' \
+printf '%s\n' '# test mapping' '19000000010000000100000000016e01,ANBERNIC-keys,a:b1,b:b0,platform:Linux,' \
   > "$dbdir/gamecontrollerdb-h700-nintendo.txt"
-printf '%s\n' '# test stick mapping' '190000005354494b530000000000000a,Stick Pad,a:b1,b:b0,leftx:a0,platform:Linux,' \
-  > "$dbdir/gamecontrollerdb-h700-sticks-xbox.txt"
-printf '%s\n' '# test stick mapping' '190000005354494b530000000000000a,Stick Pad,a:b0,b:b1,leftx:a0,platform:Linux,' \
-  > "$dbdir/gamecontrollerdb-h700-sticks-nintendo.txt"
 
 GT_PM_DB_DIR="$dbdir" GT_STAGE_EDIT_ONLY="$work" sh "$ROOT/build/build-pak.sh" portmaster
 
@@ -135,11 +131,11 @@ out=$(run_pin_out rg35xxplus '' "$FIX/rg34xxsp.txt")
 case "$out" in *'gt-h700: WARNING: profile rg35xx-plus has no analog sticks'*) ;; *) echo "missing stick-mismatch warning: $out"; exit 1;; esac
 assert_eq "$(run_pin rg35xxplus '' "$FIX/rg34xxsp.txt")" "rg35xx-plus 640 480" "exact SKU still not refined by the class"
 out=$(run_pin_out cube '' "$FIX/rg34xxsp.txt")
-case "$out" in *WARNING*) echo "CubeXX must not warn: $out"; exit 1;; esac
+case "$out" in *'WARNING: profile'*) echo "CubeXX must not warn: $out"; exit 1;; esac
 out=$(run_pin_out rg35xxpro '' "$FIX/rg34xxsp.txt")
-case "$out" in *WARNING*) echo "a two-stick profile must not warn: $out"; exit 1;; esac
+case "$out" in *'WARNING: profile'*) echo "a two-stick profile must not warn: $out"; exit 1;; esac
 out=$(run_pin_out rg35xxplus '' "$FIX/rgsp.txt")
-case "$out" in *WARNING*) echo "a plain pad must never warn: $out"; exit 1;; esac
+case "$out" in *'WARNING: profile'*) echo "a plain pad must never warn: $out"; exit 1;; esac
 
 # --- F53: use-stickless hatch -> GT_ANALOG_STICKS=0 (tables untouched; only device_info's ANALOG_STICKS) ---
 run_hatch() { # $1=userdata dir
@@ -230,39 +226,70 @@ assert_eq "$out" "640x480" "fallback honors GT_PANEL_W/H"
 out=$(env -i PATH="$PATH" sh -c ". \"$SANDBOX/fallback.sh\"; printf '%sx%s' \"\$DISPLAY_WIDTH\" \"\$DISPLAY_HEIGHT\"")
 assert_eq "$out" "720x480" "fallback defaults to the RG SP panel"
 
+# --- F65 gt-h700-rc11: NextUI rc11 check = the tagged GUID in the system libSDL2 ---
+assert_contains "$work/launch.sh" 'gt-h700-rc11 (F65)'
+# shellcheck disable=SC2016
+assert_contains "$work/launch.sh" 'export GT_NEXTUI_RC11'
+# order: gt-h700-syslib sets SYSTEM_LIB_DIR above the check that reads it
+sys_line=$(grep -n 'h700) SYSTEM_LIB_DIR=' "$work/launch.sh" | head -1 | cut -d: -f1)
+rc11_line=$(grep -n 'gt-h700-rc11 (F65)' "$work/launch.sh" | head -1 | cut -d: -f1)
+[ "$sys_line" -lt "$rc11_line" ] || { echo "rc11 check runs before SYSTEM_LIB_DIR is set"; exit 1; }
+libs="$SANDBOX/rc11libs"; mkdir -p "$libs/rc11" "$libs/rc10" "$libs/none"
+{ printf 'ELF\000'; printf '%s' '19000000010000000100000000016e01,ANBERNIC-keys,a:b0,b:b1'; printf '\000tail'; } \
+  > "$libs/rc11/libSDL2-2.0.so.0"
+{ printf 'ELF\000'; printf '%s' '19000000010000000100000000010000,ODROID Go 2,a:b0'; printf '\000tail'; } \
+  > "$libs/rc10/libSDL2-2.0.so.0"
+run_rc11() { # $1=SYSTEM_LIB_DIR ; prints "<GT_NEXTUI_RC11>|<block stdout+stderr, newlines -> ;>"
+    fake="$SANDBOX/rc11home-$$"; rm -rf "$fake"; mkdir -p "$fake"
+    env -i PATH="$PATH" HOME="$fake" PLATFORM=h700 SYSTEM_LIB_DIR="$1" GT_INPUT_DEVICES_FILE="$FIX/rgsp.txt" sh -c \
+      ". \"$SANDBOX/pinblock.sh\" >\"$fake/out.txt\" 2>&1; printf '%s|' \"\$GT_NEXTUI_RC11\"; tr '\n' ';' <\"$fake/out.txt\""
+}
+out=$(run_rc11 "$libs/rc11")
+assert_eq "${out%%|*}" "1" "rc11 libSDL2 -> GT_NEXTUI_RC11=1"
+case "$out" in *'gt-h700: NextUI pad layout rc11'*) ;; *) echo "missing rc11 log line: $out"; exit 1;; esac
+case "$out" in *'older than rc11'*) echo "rc11 must not warn: $out"; exit 1;; esac
+out=$(run_rc11 "$libs/rc10")
+assert_eq "${out%%|*}" "0" "pre-rc11 libSDL2 -> GT_NEXTUI_RC11=0"
+case "$out" in *'gt-h700: WARNING: this NextUI is older than rc11'*) ;; *) echo "missing old-firmware warning: $out"; exit 1;; esac
+out=$(run_rc11 "$libs/none")
+assert_eq "${out%%|*}" "0" "missing libSDL2 -> GT_NEXTUI_RC11=0"
+case "$out" in *'No such file'*|*'cannot open'*|*"can't open"*) echo "missing lib must not print a shell error: $out"; exit 1;; esac
+
 # --- controller DB appended, comments skipped ---
-assert_contains "$work/gamecontrollerdb_xbox.txt" '190000004b4800000111000000010000,RG SP Gamepad,a:b1'
-assert_contains "$work/gamecontrollerdb_nintendo.txt" '190000004b4800000111000000010000,RG SP Gamepad,a:b0'
+assert_contains "$work/gamecontrollerdb_xbox.txt" '19000000010000000100000000016e01,ANBERNIC-keys,a:b0'
+assert_contains "$work/gamecontrollerdb_nintendo.txt" '19000000010000000100000000016e01,ANBERNIC-keys,a:b1'
 assert_not_contains "$work/gamecontrollerdb_xbox.txt" '# test mapping'
+assert_contains "$work/gamecontrollerdb_xbox.txt" 'Dummy Pad'   # the upstream DB content is kept
 
-# --- F52: per-class DB copies — forked from the PRISTINE upstream DB, stick line appended ---
-assert_contains "$work/gamecontrollerdb_xbox_sticks.txt" '190000005354494b530000000000000a,Stick Pad,a:b1,b:b0,leftx:a0'
-assert_contains "$work/gamecontrollerdb_nintendo_sticks.txt" '190000005354494b530000000000000a,Stick Pad,a:b0,b:b1,leftx:a0'
-assert_contains "$work/gamecontrollerdb_xbox_sticks.txt" 'Dummy Pad'   # the upstream DB content is carried over
-assert_contains "$work/gamecontrollerdb_nintendo_sticks.txt" 'Dummy Pad'   # the upstream DB content is carried over
-assert_not_contains "$work/gamecontrollerdb_xbox_sticks.txt" '190000004b4800000111000000010000'   # no plain line in the stick copy
-assert_not_contains "$work/gamecontrollerdb_nintendo_sticks.txt" '190000004b4800000111000000010000'   # no plain line in the stick copy
-assert_not_contains "$work/gamecontrollerdb_xbox.txt" '190000005354494b530000000000000a'         # no stick line in the plain file
-assert_not_contains "$work/gamecontrollerdb_nintendo.txt" '190000005354494b530000000000000a'     # no stick line in the plain file
-assert_not_contains "$work/gamecontrollerdb_xbox_sticks.txt" '# test stick mapping'
-# the real assets carry the measured stick fields
-assert_contains "$ROOT/assets/gamecontrollerdb-h700-sticks-nintendo.txt" 'a:b3,b:b4,x:b6,y:b5,back:b9,start:b10,guide:b11,leftshoulder:b7,rightshoulder:b8,lefttrigger:b13,righttrigger:b14,leftstick:b12,rightstick:b15,leftx:a0,lefty:a1,rightx:a2,righty:a3,dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,platform:Linux,'
-assert_contains "$ROOT/assets/gamecontrollerdb-h700-sticks-xbox.txt" 'a:b4,b:b3,x:b5,y:b6,back:b9,start:b10,guide:b11,leftshoulder:b7,rightshoulder:b8,lefttrigger:b13,righttrigger:b14,leftstick:b12,rightstick:b15,leftx:a0'
+# --- F65: one class-free rc11 line per layout; F52's per-class copies are gone ---
+[ ! -e "$work/gamecontrollerdb_xbox_sticks.txt" ] || { echo "F65: no _sticks DB copy may be staged"; exit 1; }
+[ ! -e "$work/gamecontrollerdb_nintendo_sticks.txt" ] || { echo "F65: no _sticks DB copy may be staged"; exit 1; }
+[ ! -e "$ROOT/assets/gamecontrollerdb-h700-sticks-xbox.txt" ] || { echo "F65: the sticks DB assets must be deleted"; exit 1; }
+[ ! -e "$ROOT/assets/gamecontrollerdb-h700-sticks-nintendo.txt" ] || { echo "F65: the sticks DB assets must be deleted"; exit 1; }
+# the real assets carry exactly one rc11 line each: the patch's own built-in
+# mapping for xbox, a/b and x/y swapped for nintendo
+rc11_rest='back:b6,start:b7,guide:b8,leftshoulder:b4,rightshoulder:b5,leftstick:b9,rightstick:b10,lefttrigger:a2,righttrigger:a5,leftx:a0,lefty:a1,rightx:a3,righty:a4,dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,platform:Linux,'
+assert_eq "$(grep -v '^#' "$ROOT/assets/gamecontrollerdb-h700-xbox.txt" | grep -c .)" "1" "one xbox data line"
+assert_eq "$(grep -v '^#' "$ROOT/assets/gamecontrollerdb-h700-nintendo.txt" | grep -c .)" "1" "one nintendo data line"
+assert_eq "$(grep -v '^#' "$ROOT/assets/gamecontrollerdb-h700-xbox.txt" | grep .)" \
+  "19000000010000000100000000016e01,ANBERNIC-keys,a:b0,b:b1,x:b2,y:b3,$rc11_rest" "xbox rc11 line"
+assert_eq "$(grep -v '^#' "$ROOT/assets/gamecontrollerdb-h700-nintendo.txt" | grep .)" \
+  "19000000010000000100000000016e01,ANBERNIC-keys,a:b1,b:b0,x:b3,y:b2,$rc11_rest" "nintendo rc11 line"
 
-# --- F52: set_controller_layout picks the per-class copy ---
-assert_contains "$work/launch.sh" 'gt-h700-controller-db-class'
+# --- F65: set_controller_layout is upstream's again (no per-class pick) ---
+assert_not_contains "$work/launch.sh" 'gt-h700-controller-db-class'
 sed -n '/^set_controller_layout() {$/,/^}$/p' "$work/launch.sh" > "$SANDBOX/layoutfn.sh"
 [ -s "$SANDBOX/layoutfn.sh" ] || { echo "set_controller_layout not extracted"; exit 1; }
 fakepak="$SANDBOX/fakepak"; fakeemu="$SANDBOX/fakeemu"; mkdir -p "$fakepak/files" "$fakeemu"
 printf 'plain nintendo\n'  > "$fakepak/files/gamecontrollerdb_nintendo.txt"
-printf 'sticks nintendo\n' > "$fakepak/files/gamecontrollerdb_nintendo_sticks.txt"
+printf 'sticks nintendo\n' > "$fakepak/files/gamecontrollerdb_nintendo_sticks.txt"   # stale copy an unzip-over leaves behind
 run_layout() { # $1=GT_INPUT_CLASS ('' = unset)
     env -i PATH="$PATH" PAK_DIR="$fakepak" EMU_DIR="$fakeemu" ${1:+GT_INPUT_CLASS="$1"} sh -c \
       ". \"$SANDBOX/layoutfn.sh\"; set_controller_layout nintendo >/dev/null; cat \"$fakeemu/gamecontrollerdb.txt\""
 }
-assert_eq "$(run_layout sticks)" "sticks nintendo" "sticks class installs the _sticks DB copy"
-assert_eq "$(run_layout plain)"  "plain nintendo"  "plain class installs the plain DB"
-assert_eq "$(run_layout '')"     "plain nintendo"  "absent class = plain DB (pre-F52 behavior)"
+assert_eq "$(run_layout sticks)" "plain nintendo" "F65: sticks class uses the one rc11 DB (stale _sticks copy ignored)"
+assert_eq "$(run_layout plain)"  "plain nintendo" "plain class installs the plain DB"
+assert_eq "$(run_layout '')"     "plain nintendo" "absent class = plain DB"
 
 sh -n "$work/launch.sh" || { echo "edited launch.sh does not parse"; exit 1; }
 
@@ -273,12 +300,10 @@ assert_eq "$(grep -c 'gt-h700-input-class' "$work/launch.sh")" "1" "input-class 
 assert_eq "$(grep -c 'gt-h700-remap-hook' "$work/launch.sh")" "1" "remap hook idempotent"
 assert_eq "$(grep -c 'gt-h700-fallback' "$work/device_info.txt")" "2" "fallback edit idempotent (one marker per line, two lines)"
 assert_eq "$(grep -c 'gt-h700-stickless' "$work/device_info.txt")" "1" "stickless edit idempotent"
-assert_eq "$(grep -c '^190000004b4800000111000000010000,' "$work/gamecontrollerdb_xbox.txt")" "1" "db append dedupes by GUID"
-assert_eq "$(grep -c '^190000005354494b530000000000000a,' "$work/gamecontrollerdb_xbox_sticks.txt")" "1" "stick db append dedupes by GUID"
-assert_eq "$(grep -c '^190000005354494b530000000000000a,' "$work/gamecontrollerdb_nintendo_sticks.txt")" "1" "nintendo stick db append dedupes by GUID"
-assert_eq "$(grep -c '^190000004b4800000111000000010000,' "$work/gamecontrollerdb_xbox_sticks.txt")" "0" "stick copy never gains the plain line on restage"
-assert_eq "$(grep -c '^190000004b4800000111000000010000,' "$work/gamecontrollerdb_nintendo_sticks.txt")" "0" "nintendo stick copy never gains the plain line on restage"
-assert_eq "$(grep -c 'gt-h700-controller-db-class' "$work/launch.sh")" "1" "controller-db-class edit idempotent"
+assert_eq "$(grep -c '^19000000010000000100000000016e01,' "$work/gamecontrollerdb_xbox.txt")" "1" "db append dedupes by GUID"
+assert_eq "$(grep -c '^19000000010000000100000000016e01,' "$work/gamecontrollerdb_nintendo.txt")" "1" "nintendo db append dedupes by GUID"
+assert_eq "$(grep -c 'gt-h700-rc11 (F65)' "$work/launch.sh")" "1" "rc11 check inserted once"
+[ ! -e "$work/gamecontrollerdb_xbox_sticks.txt" ] || { echo "F65: restage must not create a _sticks copy"; exit 1; }
 sh -n "$work/launch.sh" || { echo "edited launch.sh does not parse after rerun"; exit 1; }
 
 # --- header-only mapping source (the pre-gate state) must be a clean no-op ---

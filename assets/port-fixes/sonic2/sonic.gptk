@@ -1,6 +1,6 @@
 # F43 — gt-input-remap overlay for the RSDK Sonic ports (device-verified fix).
-# The shim's v1 index-remap cross-swaps physical faces vs. gptk button names
-# on h700: physical A(south)=gptk `b`, B(east)=gptk `a`, X(west)=gptk `y`,
+# The shim's button-slot mapping cross-swaps physical faces vs. gptk button
+# names on h700: physical A(south)=gptk `b`, B(east)=gptk `a`, X(west)=gptk `y`,
 # Y(north)=gptk `x` (device trace, 2026-08-28). RSDK's shared action map has
 # only two jump actions (A=jump, C=jump; B=pause; X/Y/Z=nothing), so to get
 # the physical A+B faces jumping with DISTINCT keys (no duplicate-key

@@ -1,4 +1,10 @@
+Pre-release for testing with the NextUI rc11 preview.
+
 ### New
+- **Works with NextUI rc11's new button handling.** The PortMaster app, the
+  Nintendo/Xbox setting and games that read the buttons directly all follow
+  it. Cave Story (Evo) keeps the controls you changed in its own menu; jump
+  and fire follow your Nintendo/Xbox setting.
 - **Keyboard-and-mouse games get their controls.** Games that rely on
   PortMaster's keyboard and mouse emulation now receive it (for example
   OpenTTD, where the d-pad moves the mouse pointer).
@@ -21,12 +27,18 @@
   real RG35XX Pro).
 
 ### Changes
+- ⚠️ **Needs NextUI rc11 or newer.** On older NextUI versions the PortMaster
+  app and most games get the wrong buttons. Update NextUI before installing
+  this release.
+- ⚠️ **Balatro asks for its button check once more** the first time you start
+  it on NextUI rc11. Press each button as asked.
 - ⚠️ **The keyboard-and-mouse emulation is on by default.** If a game that
   worked before now reacts twice or to the wrong button, you can switch it off
   for that game — see "Switching the automatic keyboard path off for a game"
   in the README.
 
 ### Upgrading from v0.4.0
+- Update NextUI to rc11 or newer first.
 - Unzip the new `PORTS.pak.zip` over your SD card, replacing files when
   asked.
 - Installed games, saves and settings are untouched.

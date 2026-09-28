@@ -1,20 +1,13 @@
 #!/bin/sh
 . "$(dirname -- "$0")/helpers.sh"
 
-# gt-input-remap.c carries a pure remap table (device SDL joystick index →
-# the index the TrimUI-compiled stock PortMaster binaries expect). The table
-# is the MEASURED RG SP mapping — read live off the device via the shim's own
-# jbtn trace during a scripted press sequence (2026-08-19). NextUI's h700
-# SDL2 enumerates evdev keycodes in plain ascending order (ESC=b0, VolDown=b1,
-# VolUp=b2), so every gamepad button lands +3 from the vanilla-SDL derivation:
-#   A=3→1  B=4→0  Y=5→2  X=6→3  L1=7→4  R1=8→5
-#   Select=9→6  Start=10→7  Menu=11→8  L2=12→10  R2=13→11
-#   parked→15: 0-2 (ESC/volume would otherwise act as B/A/Y) and 14 (Menu's
-#   second emission, KEY_GOTO — would otherwise double-fire)
-# The test compiles the shim NATIVELY with -DGT_REMAP_TEST, which strips the
-# SDL/dlfcn interposer half and exposes a main() that asserts the table.
-# F52: a second measured table (RG34XXSP class, GT_INPUT_CLASS=sticks) is
-# asserted alongside; the evdev path maps code→slot directly.
+# gt-input-remap.c's pure half, compiled NATIVELY with -DGT_REMAP_TEST (which
+# strips the SDL/dlfcn interposer half and exposes a main() of asserts). F65:
+# NextUI rc11 numbers the built-in pad like TrimUI / Xbox 360 on every model
+# (B0 A1 Y2 X3 L1 4 R1 5 Select 6 Start 7 Menu 8 L3 9 R3 10, Vol 13/14,
+# L2/R2 = trigger axes 2/5, sticks a0/a1 + a3/a4), so the rc10 index-remap
+# tables are gone; main() asserts the gptk slot numbering, the trigger and
+# stick axis helpers, the b8 Menu swallow and the evdev code table against it.
 cc -DGT_REMAP_TEST -O2 -o "$SANDBOX/remap-test" "$ROOT/assets/gt-input-remap.c"
 out=$("$SANDBOX/remap-test")
 assert_eq "$out" "remap ok" "input-remap table"
@@ -45,14 +38,18 @@ assert_contains "$work/launch.sh" 'export LD_PRELOAD="$PAK_DIR/lib/gt-input-rema
 # shellcheck disable=SC2016
 assert_contains "$work/launch.sh" 'export GT_REMAP_GPTK="$gt_gptk"'
 
-# F34: LD_PRELOAD is now unconditional for h700; remap is gated by GT_INPUT_REMAP
-assert_contains "$work/launch.sh" 'export GT_INPUT_REMAP=1'
-# GT_INPUT_REMAP must sit inside the allowlist check, LD_PRELOAD outside it
+# F34: LD_PRELOAD is unconditional for h700. F65: the rc10 index remap and its
+# GT_INPUT_REMAP flag are gone (shim and launcher); the allowlist only arms the
+# gptk synthesis fallback, so GT_REMAP_GPTK sits inside it, LD_PRELOAD outside.
+assert_not_contains "$work/launch.sh" 'GT_INPUT_REMAP=1'
+assert_not_contains "$ROOT/assets/gt-input-remap.c" '"GT_INPUT_REMAP"'
+# shellcheck disable=SC2016
+assert_contains "$work/launch.sh" 'echo "Enabling input synthesis for $ROM_NAME"'
 lp=$(grep -n 'export LD_PRELOAD=' "$work/launch.sh" | head -1 | cut -d: -f1)
 gate=$(grep -n 'gt-remap-ports.txt' "$work/launch.sh" | head -1 | cut -d: -f1)
-ir=$(grep -n 'export GT_INPUT_REMAP=1' "$work/launch.sh" | head -1 | cut -d: -f1)
+gp=$(grep -n 'export GT_REMAP_GPTK=' "$work/launch.sh" | head -1 | cut -d: -f1)
 [ "$lp" -lt "$gate" ] || { echo "LD_PRELOAD must precede (be outside) the remap allowlist gate"; exit 1; }
-[ "$gate" -lt "$ir" ] || { echo "GT_INPUT_REMAP must be inside the allowlist gate"; exit 1; }
+[ "$gate" -lt "$gp" ] || { echo "GT_REMAP_GPTK must be inside the allowlist gate"; exit 1; }
 # F52: a flag file turns the shim trace on for every port (user reports)
 assert_contains "$work/launch.sh" 'gt-h700-input-debug'
 # brackets escaped for grep BRE (unescaped '[ -f ... ]' parses as a character

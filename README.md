@@ -5,6 +5,7 @@
 ## ⚠️ Read this first
 
 - **Experimental. Provided as-is, with no support and no warranty — use at your own risk.**
+- **Needs NextUI rc11 or newer.** On older NextUI versions the PortMaster app and most games get the wrong buttons.
 - **Only the Anbernic RG SP is confirmed working.** Since 0.4.0 the pak also adapts itself to other h700 NextUI devices (RG34XX SP, the RG35XX and RG40XX families, RG CubeXX), but none of them has been tested — see [Other h700 NextUI devices](#other-h700-nextui-devices).
 - **Do not ask the official PortMaster team for support.** This is an unofficial, modified build — open an issue here instead.
 - **Made with AI assistance.**
@@ -31,6 +32,7 @@ Unzip the new `PORTS.pak.zip` over the SD card the same way you installed it, re
 - Your installed ports, game files, saves, and downloaded runtimes are not part of the zip and stay untouched.
 - The first launch after upgrading takes about a minute longer (the pak re-unpacks and re-patches its internals) — that's expected.
 - This also repairs an install damaged by accepting the old update prompt on v0.1.0 — including the "every ports list is empty and Featured claims it needs internet" state that damage can leave behind.
+- Coming from 0.4.0 or earlier: update NextUI to rc11 or newer first. Balatro asks for its button check once more the first time you start it.
 - Coming from 0.3.2 or earlier, the default button layout changes from Xbox to Nintendo (A / B / X / Y as printed on the device). If you preferred the old one, switch it back — see [Changing the button layout](#changing-the-button-layout).
 
 ## Using it
@@ -67,7 +69,8 @@ means the game follows the global setting.
 
 A few games manage their own button mapping in-game and ignore this setting
 — Balatro is one; PortMaster shows a note on the game's page when that's the
-case. Cave Story (Evo) keeps its own settings file, but the pak keeps its
+case. On NextUI rc11 Balatro asks for its button check once more, because rc11
+changed how the device reports its buttons. Cave Story (Evo) keeps its own settings file, but the pak keeps its
 face buttons in line with your chosen layout.
 
 ## Confirmed working games
@@ -123,9 +126,10 @@ Only the RG SP has been tested. Other h700 devices running NextUI (RG34XX SP,
 the RG35XX and RG40XX families, RG CubeXX) should work, but are unverified:
 
 - The pak detects the device at launch and picks its screen size, sleep
-  button, hardware profile and controller mapping.
-- Devices with analog sticks get a mapping that includes both sticks, and the
-  right buttons for triggers, stick clicks and Menu.
+  button and hardware profile.
+- NextUI rc11 reports the buttons the same way on every model, so one
+  controller mapping — with both sticks, the triggers and the stick clicks —
+  covers them all.
 
 **Analog sticks — experimental, not yet tested on real hardware.**
 
@@ -153,15 +157,15 @@ the RG35XX and RG40XX families, RG CubeXX) should work, but are unverified:
 
 Gamepad input on this platform has limits, so ports fall into three groups:
 
-- ✅ **Out of the box** — ports using SDL's GameController API. LÖVE-based games also work.
-- ⚠️ **With a little setup** — ports that read raw joystick input, and keyboard-style ports (the ones whose title screen asks for a key like SPACE): both are handled by the built-in input translator — see [Fixing games that ignore your buttons](#fixing-games-that-ignore-your-buttons).
-- ❌ **Not yet** — the rare port that *polls* raw joystick button state directly. (Keyboard-polling ports, like BYTEPATH, now work — the translator keeps the keyboard state in sync.)
+- ✅ **Out of the box** — ports using SDL's GameController API, and (since NextUI rc11) ports that read the raw joystick. LÖVE-based games also work.
+- ⚠️ **With a little setup** — keyboard-style ports (the ones whose title screen asks for a key like SPACE) — see [Fixing games that ignore your buttons](#fixing-games-that-ignore-your-buttons).
+- ❔ **Untested** — the rare port that *polls* raw joystick button state directly: on NextUI rc11 it should see the right buttons, but none has been tried yet. (Keyboard-polling ports, like BYTEPATH, work — the translator keeps the keyboard state in sync.)
 
 Sound works out of the box too, including GameMaker ports that use FMOD (like Pizza Tower): the h700's audio chip only lets one program use it at a time, which normally leaves FMOD silent, and the pak works around that automatically for any FMOD port — nothing to turn on.
 
 Some ports (like Mina the Hollower) run a Mac engine that renders through a Metal→GLES translation and needs a *native* OpenGL ES 3 context, which the RG SP's GPU supports but the default graphics wrapper doesn't hand it — so the game crashed on launch. The pak detects those ports and switches them to native ES 3 automatically, and the on-screen overlay works there too — again, nothing to turn on.
 
-A few ports read the raw joystick directly and keep their own button and screen-size choices in a config file that was tuned for other hardware. Cave Story (Evo) is one: on the RG SP its d-pad did nothing, its face buttons were scrambled, and the picture overran the bottom of the screen. The pak installs an RG SP-correct control-and-resolution config for it on first launch — and only the first launch, so any rebinding or resolution change you make in-game afterward is kept. Nothing to turn on.
+A few ports read the raw joystick directly and keep their own button and screen-size choices in a config file that was tuned for other hardware. Cave Story (Evo) is one: on the RG SP its d-pad did nothing, its face buttons were scrambled, and the picture overran the bottom of the screen. The pak installs an RG SP-correct control-and-resolution config for it on first launch — and only the first launch, so any rebinding or resolution change you make in-game afterward is kept. On NextUI rc11 the pak renumbers that config once, keeping your changes (jump and fire follow your button layout). Nothing to turn on.
 
 A very small number of ports are built only for older 32-bit handhelds and don't ship anything the RG SP can run. Animal Crossing (the GameCube decompilation) is one: nothing happened when you launched it. The pak bundles a complete 32-bit graphics-and-sound runtime for it and wires the game up to that automatically, so it now boots, plays with full picture and sound, uses the standard button layout, and shows the on-screen overlay. It isn't on PortMaster and installs a little differently on the RG SP — see the [Animal Crossing install guide](https://github.com/Logarythms/nextui-portmaster-h700/wiki/Installing-Animal-Crossing). Nothing to turn on, and your saves are left alone.
 
@@ -196,20 +200,19 @@ mapping works too.
 
 Two things still need a list:
 
-- **Button numbering.** A few older games read the gamepad directly and see
-  this device's buttons in a shifted order. The pak fixes the numbering for
-  games on its built-in list — currently **Tunics!**, **BYTEPATH**, **Lasagna
-  Boy Classic**, **Road Invaders**, **The Starlit Escape**, **Sonic 1** and
-  **Sonic 2** — and you can add a game yourself (below). Games on this list
-  also keep a built-in keyboard fallback for the rare case where the helper is
-  not running.
+- **Keyboard fallback.** Games on the pak's built-in list — currently
+  **Tunics!**, **BYTEPATH**, **Lasagna Boy Classic**, **Road Invaders**, **The
+  Starlit Escape**, **Sonic 1** and **Sonic 2** — keep a built-in keyboard
+  translation for the rare case where the helper is not running, and you can
+  add a game yourself (below). (Before NextUI rc11 this list also fixed
+  shifted button numbers; rc11 numbers the buttons correctly itself.)
 - **Opting a game out.** If a game reacts twice to one press, or behaved
   better before 0.5.0, you can switch the automatic path off for that game
   with a `use-passthrough-blocklist` file (below). Please open an issue with
   the game's name if you need this — it likely means the game deserves a
   built-in entry.
 
-### Adding a game to the button-numbering list
+### Adding a game to the keyboard-fallback list
 
 1. Power the RG SP off and put its SD card into your computer.
 2. On the card, open the folder `.userdata/h700/PORTS-portmaster/`.
@@ -234,7 +237,7 @@ to how it was. Nothing else on the card is touched.
 
 Same folder, same file format, file name `use-passthrough-blocklist`. A game
 listed there runs as it did before 0.5.0: the built-in keyboard fallback if the
-game is on the button-numbering list, otherwise no keyboard translation at all.
+game is on the keyboard-fallback list, otherwise no keyboard translation at all.
 
 **If a game becomes playable or breaks for you, please open an issue with the
 game's name** — the built-in lists can then be corrected for everyone.
@@ -261,15 +264,16 @@ the same opt-out model:
   <code>use-passthrough-blocklist</code> (<code>GT_PASSTHROUGH=0</code>).
   Launchers that overwrite <code>LD_PRELOAD</code> (Doom Engines) are patched
   at launch by <code>files/gt-preload-append.sh</code> so the shim still loads.
-- **The input translator (opt-in):** corrects this device's shifted SDL
-  joystick button indices (hardware-measured table) and, when the launcher
-  finds a <code>.gptk</code> in the port's game directory and no gptokeyb is
-  running, replaces mapped joystick events with synthesized
-  <code>SDL_KEYDOWN/KEYUP</code> at the SDL event layer (the pre-F54 path, now
-  the fallback). Runs only for ports on the pak-shipped
+- **The input translator (opt-in):** when the launcher finds a
+  <code>.gptk</code> in the port's game directory and no gptokeyb is running,
+  replaces mapped joystick events (buttons, d-pad, sticks and the L2/R2
+  trigger axes) with synthesized <code>SDL_KEYDOWN/KEYUP</code> at the SDL
+  event layer (the pre-F54 path, now the fallback). NextUI rc11 numbers the
+  buttons the way ports expect, so the earlier index correction is gone
+  (F65). Runs only for ports on the pak-shipped
   <code>files/gt-remap-ports.txt</code> list or the user's own list; the GUI
-  has a separate opt-in flag file <code>use-remap</code> (normally not
-  needed — the GUI has its own mapping fix).
+  has a separate opt-in flag file <code>use-remap</code> (a debug tool;
+  since NextUI rc11 it no longer changes any buttons).
 - **An in-game status overlay (opt-out):** a single Menu tap shows or hides
   a small battery/time/volume/brightness panel drawn into the port's own
   graphics context. On by default for every port, except ones listed in

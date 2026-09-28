@@ -180,12 +180,27 @@ edit_portmaster_launch() { # $1=launch.sh path
       print "# NextUI'\''s $DEVICE SKU token (F51); unknown/absent = RG SP profile."
       print "if [ \"$PLATFORM\" = \"h700\" ]; then"
       print "    mkdir -p \"$HOME/.config\""
-      print "    # gt-h700-input-class (F52): which measured input table applies. The js0"
-      print "    # node'\''s EV_KEY bitmap word for codes 256-319 is dff... on the RG SP"
-      print "    # (304-312,314,315) and 1fff... on stick-equipped devices (304-316: the"
-      print "    # L3/R3 clicks 313/316 shift every later SDL button index). Same GUID on"
-      print "    # both, so this - not the controller DB - has to pick the table. Anything"
-      print "    # unrecognized = plain (the RG SP tables, today'\''s behavior) + a log line."
+      print "    # gt-h700-rc11 (F65): NextUI rc11 gives the built-in pad a fixed TrimUI/Xbox 360"
+      print "    # numbering under a tagged GUID, and the pak supports nothing older. rc11'\''s"
+      print "    # libSDL2 carries that GUID in its built-in mapping, so its presence is the"
+      print "    # signal. tr first: busybox grep needs ~2.8 s on the 8 MB library, tr+grep 0.13 s."
+      print "    if LC_ALL=C tr -cs 0-9a-f \"\\n\" 2>/dev/null <\"$SYSTEM_LIB_DIR/libSDL2-2.0.so.0\" \\"
+      print "        | grep -q -x 19000000010000000100000000016e01; then"
+      print "        GT_NEXTUI_RC11=1"
+      print "        echo \"gt-h700: NextUI pad layout rc11\""
+      print "    else"
+      print "        GT_NEXTUI_RC11=0"
+      print "        echo \"gt-h700: WARNING: this NextUI is older than rc11 - controls will be wrong; please update NextUI\""
+      print "    fi"
+      print "    export GT_NEXTUI_RC11"
+      print "    # gt-h700-input-class (F52): which device profile applies, and whether"
+      print "    # F53 stick synthesis is gated. The js0 node EV_KEY bitmap word for codes"
+      print "    # 256-319 is dff... on the RG SP (304-312,314,315) and 1fff... on"
+      print "    # stick-equipped devices (304-316: the extra L3/R3 clicks 313/316). Same"
+      print "    # GUID on both. F65: rc11 numbers buttons the same way on every model, so"
+      print "    # this no longer picks a table - it only drives the device profile and"
+      print "    # the F53 gate. Anything unrecognized = plain (the RG SP profile, current"
+      print "    # behavior) plus a log line."
       print "    gt_dev_file=\"${GT_INPUT_DEVICES_FILE:-/proc/bus/input/devices}\""
       print "    # Read a copy, never the proc file itself: busybox read polls fd 0 before"
       print "    # every byte and /proc/bus/input/devices only polls readable on input"
@@ -217,7 +232,7 @@ edit_portmaster_launch() { # $1=launch.sh path
       print "        dff000000000000)  GT_INPUT_CLASS=plain ;;"
       print "        1fff000000000000) GT_INPUT_CLASS=sticks ;;"
       print "        *)  GT_INPUT_CLASS=plain"
-      print "            echo \"gt-h700: unrecognized joystick key set [${gt_key_word:-none}] - using RG SP input tables; please run GT Probe and open an issue\" ;;"
+      print "            echo \"gt-h700: unrecognized joystick key set [${gt_key_word:-none}] - using RG SP input class; please run GT Probe and open an issue\" ;;"
       print "    esac"
       print "    export GT_INPUT_CLASS"
       print "    echo \"gt-h700: input class $GT_INPUT_CLASS (js0 key word ${gt_key_word:-none})\""
@@ -286,7 +301,8 @@ edit_portmaster_launch() { # $1=launch.sh path
     awk '{ print } $0 == "    rm -f \"$EMU_DIR/.pugwash-reboot\"" {
       print ""
       print "    # gt-h700-remap-hook: touch $USERDATA_PATH/PORTS-portmaster/use-remap to"
-      print "    # LD_PRELOAD the SDL joystick index remap shim into the GUI (gate tool)."
+      print "    # LD_PRELOAD the input shim into the GUI (debug/gate tool; since F65 it"
+      print "    # no longer remaps button indices)."
       print "    if [ \"$PLATFORM\" = \"h700\" ] && [ -f \"$USERDATA_PATH/PORTS-portmaster/use-remap\" ]; then"
       print "        export LD_PRELOAD=\"$PAK_DIR/lib/gt-input-remap.so${LD_PRELOAD:+:$LD_PRELOAD}\""
       print "    fi"
@@ -666,15 +682,39 @@ edit_portmaster_launch() { # $1=launch.sh path
   if ! grep -q 'gt-h700-nxengine-settings' "$f"; then
     awk '$0 == "    nintendo_file=$(find \"$USERDATA_PATH/PORTS-portmaster\" -maxdepth 1 -iname \"nintendo*\" -type f)" {
       print "    # gt-h700-nxengine-settings: install h700-correct nxengine-evo controls +"
-      print "    # resolution once (d-pad->hat0, faces->raw indices, res 640x480). Marker-"
+      print "    # resolution once (d-pad->hat0, faces->rc11 indices, res 640x480). Marker-"
       print "    # gated so in-game rebinds persist; port reinstall wipes conf/ -> re-heals."
+      print "    # F65: the shipped file is rc11-numbered, so it is stamped as such."
       print "    gt_nxe_src=\"$PAK_DIR/files/nxengine-h700/settings.dat\""
       print "    if [ \"$PLATFORM\" = \"h700\" ] && [ \"${GAMEDIR##*/}\" = \"nxengine-evo\" ] \\"
       print "        && [ -f \"$gt_nxe_src\" ] && [ ! -f \"$GAMEDIR/conf/nxengine/.gt-h700-settings\" ]; then"
       print "        echo \"Installing h700 controls/resolution for nxengine-evo (Cave Story Evo)\""
       print "        mkdir -p \"$GAMEDIR/conf/nxengine\""
       print "        cp -f \"$gt_nxe_src\" \"$GAMEDIR/conf/nxengine/settings.dat\""
-      print "        touch \"$GAMEDIR/conf/nxengine/.gt-h700-settings\""
+      print "        touch \"$GAMEDIR/conf/nxengine/.gt-h700-settings\" \"$GAMEDIR/conf/nxengine/.gt-h700-rc11\""
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-button-map-rc11: F65 — Balatro-class ports save their first-run
+  # button wizard's SDL mapping to $BUTTON_MAP_FILE, keyed on the pad GUID of
+  # the moment. NextUI rc11 gives the built-in pad a new, tagged GUID, so a map
+  # saved on older firmware silently stops matching. The helper moves such a
+  # map aside and the port's own "no file -> run the button check" rule asks
+  # the player once. It never edits the launcher (a rebuild source, F32).
+  # Waits for rc11 (GT_NEXTUI_RC11, set on the common path by gt-h700-rc11).
+  # Anchored on the nintendo_file line (inside run_port, after GAMEDIR
+  # resolves, before the port executes) like the F27/F39/F45 blocks.
+  if ! grep -q 'gt-h700-button-map-rc11' "$f"; then
+    awk '$0 == "    nintendo_file=$(find \"$USERDATA_PATH/PORTS-portmaster\" -maxdepth 1 -iname \"nintendo*\" -type f)" {
+      print "    # gt-h700-button-map-rc11 (F65): a Balatro-class button map saved before rc11"
+      print "    # names the old pad GUID; move it aside so the port asks for its button check once."
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && [ \"${GT_NEXTUI_RC11:-0}\" = 1 ]; then"
+      print "        \"$PAK_DIR/files/gt-button-map-rc11.sh\" \"$ROM_PATH\" \"$GAMEDIR\""
       print "    fi"
       print ""
       print $0
@@ -887,13 +927,13 @@ edit_portmaster_launch() { # $1=launch.sh path
   # at all (doc/code mismatch found while fixing Tunics!, whose Solarus
   # engine reads raw joystick events: it launched fine and ignored every
   # button, hardware-diagnosed 2026-08-23). What the shim actually DOES stays
-  # gated: the v1 index remap + gptk keyboard synthesis (h700 button indices
-  # sit +3 off the layout ports expect; measured table in
-  # assets/gt-input-remap.c) are opt-in via GT_INPUT_REMAP=1, set only for
+  # gated: gptk keyboard synthesis is opt-in via GT_REMAP_GPTK, set only for
   # launcher filenames listed in files/gt-remap-ports.txt (pak-shipped
   # defaults) or the user's $USERDATA_PATH/PORTS-portmaster/use-remap-ports
   # (one name per line, no rebuild needed) — GameController-tier ports get
-  # correct input natively and must stay untouched. The in-game HUD (F34) is
+  # correct input natively and must stay untouched. F65: NextUI rc11 numbers
+  # the pad the way ports expect, so the rc10-era index remap and its
+  # GT_INPUT_REMAP flag are gone. The in-game HUD (F34) is
   # the opposite shape: GT_HUD=1 by default for every port, opt-OUT via
   # files/gt-hud-blocklist.txt (pak-shipped) or the user's
   # use-hud-blocklist, for ports where the overlay is known to misbehave.
@@ -907,11 +947,10 @@ edit_portmaster_launch() { # $1=launch.sh path
       print "        export LD_PRELOAD=\"$PAK_DIR/lib/gt-input-remap.so${LD_PRELOAD:+:$LD_PRELOAD}\""
       print "        # gt-h700-input-debug (F52): touch use-input-debug to trace every remap/synth into PORTS.txt"
       print "        [ -f \"$USERDATA_PATH/PORTS-portmaster/use-input-debug\" ] && export GT_INPUT_REMAP_DEBUG=1"
-      print "        # input remap stays opt-in (allowlist): TrimUI index remap + gptk synthesis"
+      print "        # input synthesis stays opt-in (allowlist): the gptk keyboard fallback"
       print "        if grep -Fxq \"$ROM_NAME\" \"$PAK_DIR/files/gt-remap-ports.txt\" 2>/dev/null \\"
       print "            || grep -Fxq \"$ROM_NAME\" \"$USERDATA_PATH/PORTS-portmaster/use-remap-ports\" 2>/dev/null; then"
-      print "            echo \"Enabling input remap for $ROM_NAME\""
-      print "            export GT_INPUT_REMAP=1"
+      print "            echo \"Enabling input synthesis for $ROM_NAME\""
       print "            for gt_gptk in \"$GAMEDIR\"/*.gptk; do"
       print "                [ -f \"$gt_gptk\" ] && export GT_REMAP_GPTK=\"$gt_gptk\""
       print "                break"
@@ -1280,21 +1319,6 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
-  # gt-h700-controller-db-class: F52 — stick-equipped devices install the
-  # per-class DB copy (files/gamecontrollerdb_<layout>_sticks.txt, staged by
-  # stage_controllerdb_classes). GT_INPUT_CLASS comes from the device-pin
-  # block on the common path, so the GUI and run_port both inherit it; absent
-  # or plain = the unchanged upstream path.
-  if ! grep -q 'gt-h700-controller-db-class' "$f"; then
-    awk '$0 == "    src=\"$PAK_DIR/files/gamecontrollerdb_$layout.txt\"" {
-      print "    # gt-h700-controller-db-class (F52): stick devices get the per-class DB copy"
-      print "    gt_db_suffix=; [ \"${GT_INPUT_CLASS:-plain}\" = sticks ] && gt_db_suffix=_sticks"
-      print "    src=\"$PAK_DIR/files/gamecontrollerdb_${layout}${gt_db_suffix}.txt\""
-      next
-    }
-    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
-  fi
-
   # gt-h700-controller-layout-platform: F48 — patch PlatformTrimUI.loaded() so the
   # GUI's confirm/back follows config.json (same key launch.sh reads for ports).
   if ! grep -q 'gt-h700-controller-layout-platform' "$f"; then
@@ -1543,7 +1567,7 @@ strip_weston_runtime() { # $1=pak root (the dir holding files/)
 }
 
 append_controllerdb() { # $1=repo mapping file $2=target gamecontrollerdb
-  # Appends measured RG SP mapping lines (gate-filled; header-only = no-op).
+  # Appends the pak's rc11 mapping lines (header-only = no-op).
   # Dedupe by GUID so restaging after the gate stays idempotent.
   [ -f "$1" ] || return 0
   grep -v '^#' "$1" | grep -v '^[[:space:]]*$' | while IFS= read -r line; do
@@ -1552,19 +1576,13 @@ append_controllerdb() { # $1=repo mapping file $2=target gamecontrollerdb
   done
 }
 
-stage_controllerdb_classes() { # $1=dir holding gamecontrollerdb_<layout>.txt $2=repo mapping dir
-  # F52: stick-equipped devices need their own controller-DB line but share the
-  # RG SP's GUID, so each layout gets a per-class COPY: <layout>_sticks.txt =
-  # the upstream DB + the stick line. ORDER MATTERS: the copy must fork from the
-  # PRISTINE upstream file BEFORE the plain RG SP line is appended, because
-  # append_controllerdb dedupes by GUID and would otherwise skip the stick line.
-  # On a restage the copy already exists (not re-forked) and both appends dedupe.
+stage_controllerdb() { # $1=dir holding gamecontrollerdb_<layout>.txt $2=repo mapping dir
+  # F65: NextUI rc11 numbers the built-in pad the same on every h700 model, so
+  # one line per layout serves every device (F52's per-class _sticks copies are
+  # gone). GUID-deduped by append_controllerdb, so a restage is idempotent.
   for gt_l in xbox nintendo; do
-    base="$1/gamecontrollerdb_$gt_l.txt"; sticks="$1/gamecontrollerdb_${gt_l}_sticks.txt"
-    [ -f "$base" ] || continue
-    [ -f "$sticks" ] || cp -f "$base" "$sticks"
-    append_controllerdb "$2/gamecontrollerdb-h700-$gt_l.txt" "$base"
-    append_controllerdb "$2/gamecontrollerdb-h700-sticks-$gt_l.txt" "$sticks"
+    [ -f "$1/gamecontrollerdb_$gt_l.txt" ] || continue
+    append_controllerdb "$2/gamecontrollerdb-h700-$gt_l.txt" "$1/gamecontrollerdb_$gt_l.txt"
   done
 }
 
@@ -1584,7 +1602,7 @@ if [ -n "${GT_STAGE_EDIT_ONLY:-}" ]; then
         edit_portmaster_control "$GT_STAGE_EDIT_ONLY/control.txt"
       fi
       pm_db_dir=${GT_PM_DB_DIR:-$ASSETS}
-      stage_controllerdb_classes "$GT_STAGE_EDIT_ONLY" "$pm_db_dir"
+      stage_controllerdb "$GT_STAGE_EDIT_ONLY" "$pm_db_dir"
       strip_weston_runtime "$GT_STAGE_EDIT_ONLY"
       ;;
     *) echo "usage: build-pak.sh portmaster" >&2; exit 1 ;;
@@ -1829,7 +1847,7 @@ do_portmaster() {
   edit_portmaster_device_info "$assembled/PortMaster/device_info.txt"
   edit_portmaster_pugwash "$assembled/PortMaster/pugwash"
   edit_portmaster_control "$assembled/files/control.txt"
-  stage_controllerdb_classes "$assembled/files" "$ASSETS"
+  stage_controllerdb "$assembled/files" "$ASSETS"
 
   # F48: stage the layout resolver run_port/run_portmaster_gui call into.
   cp -f "$ASSETS/gt-controller-layout.sh" "$assembled/files/gt-controller-layout.sh"
@@ -1838,6 +1856,10 @@ do_portmaster() {
   # F49: stage the nxengine-evo (Cave Story) settings.dat layout-conform helper.
   cp -f "$ASSETS/gt-nxengine-conform-layout.sh" "$assembled/files/gt-nxengine-conform-layout.sh"
   chmod +x "$assembled/files/gt-nxengine-conform-layout.sh"
+
+  # F65: stage the Balatro-class button-map check run_port calls on rc11.
+  cp -f "$ASSETS/gt-button-map-rc11.sh" "$assembled/files/gt-button-map-rc11.sh"
+  chmod +x "$assembled/files/gt-button-map-rc11.sh"
 
   # F48: stage the GUI PlatformTrimUI patch helper that patch_pylibs invokes.
   # $assembled/src/ already exists from the upstream ports-pak.zip extraction

@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (up to F64) below match the internal numbering used while these were
+Fix IDs (up to F65) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. The numbering has gaps — some IDs are
 reserved or live on other branches until release. A closing section records the ports
@@ -141,6 +141,8 @@ the entry silently fails to appear without that exact content. Fix: write
 the real comment-only file instead of an empty one.
 
 ## Controller mapping (F4)
+
+*Superseded on NextUI rc11 by [F65](#nextui-rc11-one-fixed-pad-layout-on-every-h700-model-f65): the rc10 button numbering described here no longer applies.*
 
 SDL ships a large database of known controller GUID → button-layout
 mappings. The RG SP's gamepad reports a generic HID GUID that collides
@@ -478,6 +480,8 @@ ports:
 
 ## Keyboard-driven ports: SDL-layer key synthesis (F26)
 
+*Superseded on NextUI rc11 by [F65](#nextui-rc11-one-fixed-pad-layout-on-every-h700-model-f65): the rc10 button numbering described here no longer applies.*
+
 The largest class of dead ports on this platform was the
 gamepad-to-keyboard tier: games written for a keyboard, which supported
 PortMaster devices serve through gptokeyb's virtual uinput keyboard —
@@ -661,6 +665,8 @@ remain the one open input sub-tier (see F8).
 
 ## Input architecture: an honest compatibility statement (F8)
 
+*Superseded on NextUI rc11 by [F65](#nextui-rc11-one-fixed-pad-layout-on-every-h700-model-f65): the rc10 button numbering described here no longer applies.*
+
 NextUI's SDL2 build on h700 does not deliver PortMaster's usual
 gamepad-to-keyboard translation layer to games at all — that translation
 tool runs and successfully creates its virtual keyboard device, but game
@@ -744,10 +750,11 @@ spike note below).
   port, but only the overlay half defaults to on: `GT_HUD=1` unless the
   port is listed in the pak-shipped `files/gt-hud-blocklist.txt` or the
   user's own `use-hud-blocklist`. The input remap and gptk key synthesis
-  stay exactly as opt-in as before (`GT_INPUT_REMAP=1`, gated by the
-  `gt-remap-ports.txt` allowlist) — universal preload does not change input
-  behavior on a port that isn't on that list. `GT_HUD_DEBUG=1` traces the
-  sample/draw/swap path the same way `GT_INPUT_REMAP_DEBUG` does for remap.
+  stay exactly as opt-in as before (gated by the `gt-remap-ports.txt`
+  allowlist; the `GT_INPUT_REMAP=1` flag of the time was removed in F65) —
+  universal preload does not change input behavior on a port that isn't on
+  that list. `GT_HUD_DEBUG=1` traces the sample/draw/swap path the same way
+  `GT_INPUT_REMAP_DEBUG` does for remap.
 - **Crash safety.** The draw path is wrapped so any GL failure (a bad
   shader compile, a missing GL entry point, an unexpected error) disables
   the overlay for the rest of that session instead of crashing the host —
@@ -823,12 +830,25 @@ path)
 - F64: Luanti's text renders correctly instead of `<invalid UTF-8 string>` —
   shipped glibc's missing UTF-16/UTF-32 `gconv` conversion modules
 
+**NextUI rc11 (F65).** This release requires NextUI h700-rc11 or newer and is
+published as a pre-release alongside the rc11 preview.
+- F65: the input stack moves to rc11's fixed TrimUI/Xbox 360 pad numbering —
+  the rc10 index-remap tables, the per-class controller-DB copies and the
+  Menu-echo handling are removed; one rc11 controller-DB line per layout
+  serves every h700 model; the shim synthesizes gptk `l2`/`r2` keys from
+  rc11's trigger axes; Cave Story's settings are renumbered (installs made
+  before rc11 migrate once, keeping in-game rebinds; JUMP/FIRE are
+  re-conformed to the layout); a Balatro button map
+  saved on the old pad ID is moved aside so the game asks for its button check
+  once; launch.sh logs a warning on firmware older than rc11
+
 **Build:** the pinned bullseye `.deb`s now come from snapshot.debian.org
 (bullseye itself is archived on deb.debian.org); the gmtoolkit pin was
 refreshed to the bytes upstream re-published under the same tag (not
 re-verified on device with a GameMaker port that patches on first launch).
 
-**Upgrading from 0.4.0:** unzip-over (self-healing); no manual steps. Ports
+**Upgrading from 0.4.0:** update NextUI to rc11 or newer first, then
+unzip-over (self-healing); Balatro asks for its button check once. Ports
 carried over from another CFW's card may be stale builds — let PortMaster
 update/reinstall them before retesting.
 
@@ -1186,6 +1206,8 @@ skipped, leaving the HUD byte-for-byte unchanged on every existing port
 the HUD now renders on native ES3, gothic ports are **not** HUD-blocklisted.
 
 ## Cave Story (Evo): raw-joystick bindings baked into settings.dat (F39)
+
+*Superseded on NextUI rc11 by [F65](#nextui-rc11-one-fixed-pad-layout-on-every-h700-model-f65): the rc10 button numbering described here no longer applies.*
 
 Cave Story (Evo) runs on **nxengine-evo**, which reads the **raw SDL joystick**
 directly (`SDL_JoystickOpen` + `SDL_JOYBUTTONDOWN`/`SDL_JOYHATMOTION` events — no
@@ -1586,6 +1608,8 @@ layout dynamically.
 
 ## Cave Story (Evo): face buttons now follow the resolved layout (F49)
 
+*Superseded on NextUI rc11 by [F65](#nextui-rc11-one-fixed-pad-layout-on-every-h700-model-f65): the rc10 button numbering described here no longer applies.*
+
 F39 shipped Cave Story (Evo) an RG SP-correct `settings.dat` with a fixed
 JUMP/FIRE binding (JUMP → raw index 4/bottom, FIRE → raw index 3/right — an
 xbox-style pairing). F48 then made the confirm-button layout configurable
@@ -1704,6 +1728,8 @@ suspend-proxy chain is a copy of the RG SP's stock output chain.
 
 ## Stick-equipped devices: input class and per-class tables (F52)
 
+*Superseded on NextUI rc11 by [F65](#nextui-rc11-one-fixed-pad-layout-on-every-h700-model-f65): the rc10 button numbering described here no longer applies.*
+
 Every button table in the pak was measured on the RG SP: the two SDL
 controller-DB lines, the shim's raw-index remap, the HUD's Menu-echo
 swallow, and the F45 evdev-code table. The first non-RG-SP probe log — an
@@ -1756,6 +1782,8 @@ Wording for users and the volunteer-gate decision: stick support ships
 measured tables are in `docs/superpowers/specs/2026-09-01-stick-device-support-design.md`.
 
 ## Stick-equipped devices: analog sticks as keys, and a truthful profile (F53)
+
+*Superseded on NextUI rc11 by [F65](#nextui-rc11-one-fixed-pad-layout-on-every-h700-model-f65): the rc10 button numbering described here no longer applies.*
 
 With the buttons right, two things kept stick devices second-class: the
 shim ignored every analog line in a gptk (the RG SP has no sticks), and the
@@ -2090,3 +2118,86 @@ control design, not a pak bug); and the regression check on Celeste
 the F54 `ANALOGSTICKS` alias). Not device-tested: F56 (no RG35XX Pro on hand),
 F61 (Fallout 1 not owned), and F62's pre-rc10 path (on rc10 the probe prints
 `Y`, which is correct).
+
+## NextUI rc11: one fixed pad layout on every h700 model (F65)
+
+NextUI h700-rc11 changed how its SDL fork numbers the built-in pad. The change
+is in LoveRetro/h700-toolchain `support/sdl2-h700.patch` (commits `46cc4d73`
+and `04faa348`), not in the NextUI repository. The built-in pad
+(`ANBERNIC-keys`) now gets one fixed layout on every model, "matching TrimUI
+Player1 and Xbox 360 raw indices", under a tagged GUID
+`19000000010000000100000000016e01` (rc10 reported `…00010000`):
+
+| control | rc11 SDL | | control | rc11 SDL |
+|---|---|---|---|---|
+| B (south) | b0 | | Select | b6 |
+| A (east) | b1 | | Start | b7 |
+| Y (west) | b2 | | Menu | b8 (one event; no ESC, no KEY_GOTO echo) |
+| X (north) | b3 | | L3 / R3 | b9 / b10 |
+| L1 / R1 | b4 / b5 | | Vol− / Vol+ | b13 / b14 |
+
+L2/R2 are trigger axes a2/a5 (+32767 pressed, −32768 released), the sticks
+are a0/a1 and a3/a4, and the d-pad is hat 0. SDL adds a built-in positional
+mapping for the tagged GUID at default priority, so the pak's DB lines
+override it. `SDL_JOYSTICK_H700_FIXED_LAYOUT=0` restores the rc10 numbering;
+the pak supports neither that nor anything older than rc11.
+
+rc11's numbering is what the shim's rc10 index remap existed to fake, so F65
+is mostly removal:
+
+- **Shim (`gt-input-remap.c`):** the rc10 index tables (RG SP and stick
+  class), the ESC/Vol/echo parking and the `GT_INPUT_REMAP` flag are gone.
+  The gptk slot space is rc11's SDL numbering (`r3` moved from slot 12 to
+  10); `l2`/`r2` keys live in a separate trigger table driven by axis 2/5
+  edges (pressed iff value > 0; an unmapped trigger passes through as an
+  axis). The F53 stick synthesis reads a0/a1 + a3/a4, the evdev path (F45)
+  maps codes to the same slots, and the HUD swallows b8 only.
+- **Controller DB:** one rc11 line per layout (xbox = SDL's own built-in
+  mapping, nintendo = a/b and x/y swapped). F52's `_sticks` copies and the
+  `gt-h700-controller-db-class` hook are gone — the layout is the same on
+  every model.
+- **Firmware check (`gt-h700-rc11`):** `GT_NEXTUI_RC11=1` when the tagged
+  GUID string is in the system `libSDL2`, else `0` plus a log warning. The
+  scan is `tr -cs 0-9a-f "\n" | grep -x`: busybox `grep` alone needs ~2.8 s
+  on the 8 MB library, the tr pipe 0.13 s. Only the two migrations below
+  read it.
+- **Cave Story (F39/F49):** the shipped `settings.dat` is renumbered (records
+  4–10: `4,3,5,9,10,7,8` → `0,1,2,6,7,4,5`) and stamped `.gt-h700-rc11`. An
+  install made before rc11 is translated once — all 28 bindings, per input
+  class — and buttons rc11 lacks (ESC, the echo, L2/R2) become unbound. The
+  migration then clears `.gt-h700-layout`, so the conform below re-applies
+  JUMP/FIRE. The layout conform writes rc11 values (Nintendo JUMP=1/FIRE=0,
+  Xbox JUMP=0/FIRE=1).
+- **Balatro-class ports:** `files/gt-button-map-rc11.sh` moves a
+  `$BUTTON_MAP_FILE` whose first mapping line names the pre-rc11 built-in ID
+  (`190000000100000001000000????0000`) to `<file>.pre-rc11`, so the port's
+  own wizard asks once. The launcher is never edited (F32).
+
+Unaffected: the evdev HUD toggle (F35), sleep (F47), gptokeyb passthrough
+(F54), the input-class detection (still drives the device profile and the
+F53 gate), and Animal Crossing (its own 32-bit SDL; its gameplay input is
+evdev, and its L2/R2 now reach the same gptk keys through the trigger
+table).
+
+**Device gate (2026-09-29, RG SP, NextUI h700-rc11).** Measurement pass
+(Task 0, 2026-09-28): pad GUID `…016e01`, 15 buttons / 6 axes / 1 hat,
+built-in mapping as the patch source says; B, A, Y, X, L1, R1, Select, Start
+= b0–b7, Menu = one b8 (no ESC, no echo), Vol−/Vol+ = b13/b14, L2/R2 on
+a2/a5, d-pad on hat 0; nothing on b11/b12. Gate, installed by unzip-over, all
+nine items PASS: (1) launch log shows `NextUI pad layout rc11`; (2) PortMaster
+GUI navigation, confirm/back and the Controller Layout toggle on both
+layouts; (3) Celeste on Nintendo and Xbox; (4) BYTEPATH, Tunics! (no doubled
+actions) and OpenTTD's L2/R2 zoom through gptokeyb passthrough, Select+Start
+quits; (5) Sonic 1 on the synthesis path, B only jumps, and with `l2`/`r2`
+temporarily added to its gptk each trigger press produced exactly one
+synthesized key down/up from the axis events; (6) a Menu tap toggles the
+overlay without the game reacting, Menu+Vol changes brightness; (7) Cave
+Story's 0.4.0-era settings migrated once (stamp written, all 28 bindings
+equal to the shipped rc11 file), JUMP/FIRE follow each layout, and rebinds
+made after the migration (Inventory → north, Map → Vol+) persist across a
+layout change; (8) Balatro's map recorded on the pre-rc11 ID moved to
+`controller-map.txt.pre-rc11` unchanged, the port asked for its button check
+exactly once and recorded the new map on the rc11 ID, the launcher's mtime
+was untouched; (9) Animal Crossing plays, L2/R2 rotate the camera, sleep and
+resume from power and lid keep sound. Stick devices: host-tested only (no
+hardware), EXPERIMENTAL label kept.

@@ -11,8 +11,8 @@
 # Sonic 1/2 (F43): their launchers DO run gptokeyb, against the very sonic.gptk
 # this pak overlays. Under passthrough gptokeyb would read that file itself,
 # but its face naming follows the controller database while the shim's follows
-# the v1 index remap + F48 layout flip — whether physical A/B land on the same
-# keys is unverified. Kept on the device-verified synthesis path until a device
-# gate says otherwise (follow-up recorded in docs/h700-fixes.md, F54).
+# the F48 layout flip — whether physical A/B land on the same keys is
+# unverified. Kept on the device-verified synthesis path until a device gate
+# says otherwise (follow-up recorded in docs/h700-fixes.md, F54).
 Sonic 1.sh
 Sonic 2.sh

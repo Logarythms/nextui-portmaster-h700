@@ -1,8 +1,9 @@
-# RG SP (h700 NextUI) SDL controller mapping — nintendo layout (a/b and x/y swapped vs xbox).
-# MEASURED ON-DEVICE at the hardware gate: GUID from the pugwash log, button
-# indices via the gt-input-remap.so jbtn trace (never derived from evtest —
-# a vanilla-SDL derivation from evtest keycodes gave a different, wrong
-# table). One SDL mapping line per row:
+# NextUI-h700 rc11+ SDL controller mapping — nintendo layout (a/b and x/y
+# swapped vs xbox, so the buttons act as printed). rc11's SDL gives the
+# built-in pad ONE fixed layout on every h700 model under the tagged GUID
+# ...016e01 (LoveRetro h700-toolchain sdl2-h700.patch; confirmed on the RG SP
+# by the F65 measurement pass). Sticks and triggers are included — on
+# stickless models those axes never move. One SDL mapping line per row;
+# staging appends data lines verbatim (GUID-deduped):
 #   <guid>,<name>,a:bN,b:bN,...,platform:Linux,
-# Header-only until the gate fills it; staging appends data lines verbatim.
-19000000010000000100000000010000,RG SP Gamepad,a:b3,b:b4,x:b6,y:b5,back:b9,start:b10,guide:b11,leftshoulder:b7,rightshoulder:b8,lefttrigger:b12,righttrigger:b13,dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,platform:Linux,
+19000000010000000100000000016e01,ANBERNIC-keys,a:b1,b:b0,x:b3,y:b2,back:b6,start:b7,guide:b8,leftshoulder:b4,rightshoulder:b5,leftstick:b9,rightstick:b10,lefttrigger:a2,righttrigger:a5,leftx:a0,lefty:a1,rightx:a3,righty:a4,dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,platform:Linux,
