@@ -175,29 +175,36 @@ The `LD_PRELOAD` shims (input-remap, FMOD-audio, GLES-profile, SDL-audio-init), 
 
 ## Fixing games that ignore your buttons
 
-Some games start fine but then don't react to any button — often the title
-screen even asks for a keyboard key ("PRESS SPACE"). Those games were written
-for a keyboard. On most PortMaster devices a background helper silently turns
-gamepad presses into keystrokes, but NextUI on the RG SP never delivers that
-helper's keystrokes to games. This pak therefore includes its own translator
-that does the same job from the inside.
+Some games are written for a keyboard and mouse. On every PortMaster device a
+background helper turns your gamepad into keystrokes and mouse movement, using
+a little mapping file (ending in `.gptk`) that the game's porter wrote — A =
+Space, d-pad = arrow keys, right stick = mouse, and so on. NextUI's graphics
+library never learned where that helper's virtual keyboard lives, so on the
+RG SP those keystrokes used to vanish and the game ignored every button.
 
-**It's automatic, per game.** Every affected port ships a little mapping file
-(ending in `.gptk`) written by the port's author that says which button
-should press which key — for Tunics! that's A = Space, Start = W, d-pad =
-arrow keys, and so on. When the translator is enabled for a game, that game's
-own mapping file is picked up automatically. You never have to write a
-mapping yourself. On a device with analog sticks, the translator also turns
-stick movement into the keys the mapping file names (experimental — see
-[Other h700 NextUI devices](#other-h700-nextui-devices)).
+**Since 0.5.0 this works automatically.** When a game starts, this pak tells
+the graphics library where the helper's keyboard is, so the game receives the
+helper's keys **and mouse** exactly as it does on other handhelds. Nothing to
+set up, and the porter's own mapping is used, so each game keeps the layout
+its author designed. On a device with analog sticks the helper's stick-to-mouse
+mapping works too.
 
-Games on the built-in list need no setup at all — currently **Tunics!**,
-**BYTEPATH**, **Lasagna Boy Classic**, **Road Invaders**, and
-**The Starlit Escape**.
+Two things still need a list:
 
-### Turning it on for another game
+- **Button numbering.** A few older games read the gamepad directly and see
+  this device's buttons in a shifted order. The pak fixes the numbering for
+  games on its built-in list — currently **Tunics!**, **BYTEPATH**, **Lasagna
+  Boy Classic**, **Road Invaders**, **The Starlit Escape**, **Sonic 1** and
+  **Sonic 2** — and you can add a game yourself (below). Games on this list
+  also keep a built-in keyboard fallback for the rare case where the helper is
+  not running.
+- **Opting a game out.** If a game reacts twice to one press, or behaved
+  better before 0.5.0, you can switch the automatic path off for that game
+  with a `use-passthrough-blocklist` file (below). Please open an issue with
+  the game's name if you need this — it likely means the game deserves a
+  built-in entry.
 
-If a game starts but ignores every button, try this:
+### Adding a game to the button-numbering list
 
 1. Power the RG SP off and put its SD card into your computer.
 2. On the card, open the folder `.userdata/h700/PORTS-portmaster/`.
@@ -218,39 +225,52 @@ If a game starts but ignores every button, try this:
 Changed your mind? Remove the game's line (or delete the file) and it's back
 to how it was. Nothing else on the card is touched.
 
-**If this makes a game playable for you, please open an issue with the
-game's name** — it can then join the built-in list, and the next release
-fixes it for everyone out of the box.
+### Switching the automatic keyboard path off for a game
 
-Two honest limitations: a game with no `.gptk` mapping file only gets its
-button numbering fixed (that alone cures some games); and the rare game that
-polls the raw joystick's button state directly, instead of reading events,
-stays broken for now.
+Same folder, same file format, file name `use-passthrough-blocklist`. A game
+listed there runs as it did before 0.5.0: the built-in keyboard fallback if the
+game is on the button-numbering list, otherwise no keyboard translation at all.
+
+**If a game becomes playable or breaks for you, please open an issue with the
+game's name** — the built-in lists can then be corrected for everyone.
+
+One honest limitation remains: the rare game that polls the raw joystick's
+button state directly, instead of reading events, stays broken for now.
 
 <details>
 <summary>Technical details</summary>
 
 <code>lib/gt-input-remap.so</code> is an <code>LD_PRELOAD</code> shim the launcher
-injects into every h700 port, with two independent halves, each with its own
+injects into every h700 port, with independent halves, each with its own
 default. The launcher also spawns a separate sleep watcher for every port, on
 the same opt-out model:
 
-- **The input translator (opt-in)**, described above: corrects this
-  device's shifted SDL joystick button indices (hardware-measured table)
-  and, when the launcher finds a <code>.gptk</code> in the port's game
-  directory, replaces mapped joystick events with synthesized
-  <code>SDL_KEYDOWN/KEYUP</code> at the SDL event layer, honoring the
-  simple <code>name = key</code> subset of the gptk format. Runs only for
-  ports on the pak-shipped <code>files/gt-remap-ports.txt</code> list or
-  the user's own list; the GUI has a separate opt-in flag file
-  <code>use-remap</code> (normally not needed — the GUI has its own mapping
-  fix).
-- **An in-game status overlay (opt-out)**: a single Menu tap shows or hides
+- **gptokeyb passthrough (opt-out, F54):** at <code>SDL_Init</code> the shim
+  looks for a running <code>gptokeyb</code>/<code>gptokeyb2</code>, resolves its
+  "Fake Keyboard" uinput node from <code>/proc/bus/input/devices</code> and
+  exports <code>SDL_EVDEV_DEVICES=3:/dev/input/eventN</code>, which is how
+  NextUI's no-libudev SDL2 learns about keyboard and mouse devices. The port's
+  own gptokeyb then delivers keys and mouse; the shim's synthesis below is
+  switched off for that process. Off for ports listed in
+  <code>files/gt-passthrough-blocklist.txt</code> or the user's
+  <code>use-passthrough-blocklist</code> (<code>GT_PASSTHROUGH=0</code>).
+  Launchers that overwrite <code>LD_PRELOAD</code> (Doom Engines) are patched
+  at launch by <code>files/gt-preload-append.sh</code> so the shim still loads.
+- **The input translator (opt-in):** corrects this device's shifted SDL
+  joystick button indices (hardware-measured table) and, when the launcher
+  finds a <code>.gptk</code> in the port's game directory and no gptokeyb is
+  running, replaces mapped joystick events with synthesized
+  <code>SDL_KEYDOWN/KEYUP</code> at the SDL event layer (the pre-F54 path, now
+  the fallback). Runs only for ports on the pak-shipped
+  <code>files/gt-remap-ports.txt</code> list or the user's own list; the GUI
+  has a separate opt-in flag file <code>use-remap</code> (normally not
+  needed — the GUI has its own mapping fix).
+- **An in-game status overlay (opt-out):** a single Menu tap shows or hides
   a small battery/time/volume/brightness panel drawn into the port's own
   graphics context. On by default for every port, except ones listed in
   <code>files/gt-hud-blocklist.txt</code> or the user's own
   <code>use-hud-blocklist</code>.
-- **Sleep support (opt-out)**: a power-button press or lid close suspends
+- **Sleep support (opt-out):** a power-button press or lid close suspends
   the running port and resumes it on the next power press, routing audio
   through a suspend-safe ALSA proxy so sound survives. On by default for
   every port, except ones listed in

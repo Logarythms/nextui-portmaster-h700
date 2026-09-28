@@ -141,6 +141,26 @@ assert_eq "$out" "0" "hatch env overrides ANALOG_STICKS"
 out=$(env -i PATH="$PATH" sh -c "ANALOG_STICKS=2; . \"$SANDBOX/stickless.sh\"; printf '%s' \"\$ANALOG_STICKS\"")
 assert_eq "$out" "2" "no hatch env keeps upstream ANALOG_STICKS"
 
+# --- F54: ANALOGSTICKS alias — OpenTTD's launcher spells the stick count
+# without the underscore ($ANALOGSTICKS); device_info.txt never set it, so
+# export it too, right after upstream's own export (i.e. after the
+# use-stickless override resolves the value).
+assert_eq "$(grep -c 'gt-h700-analogsticks' "$work/device_info.txt")" "1" "analogsticks alias present exactly once"
+alias_line=$(grep -n 'gt-h700-analogsticks' "$work/device_info.txt" | head -1 | cut -d: -f1)
+export_line=$(grep -n '^export ANALOG_STICKS$' "$work/device_info.txt" | head -1 | cut -d: -f1)
+[ "$((export_line + 1))" = "$alias_line" ] || { echo "analogsticks alias must sit exactly one line after export ANALOG_STICKS"; exit 1; }
+sed -n '/gt-h700-stickless/,/gt-h700-analogsticks/p' "$work/device_info.txt" > "$SANDBOX/analogsticks.sh"
+out=$(env -i PATH="$PATH" GT_ANALOG_STICKS=0 sh -c "ANALOG_STICKS=2; . \"$SANDBOX/analogsticks.sh\"; printf '%s' \"\$ANALOGSTICKS\"")
+assert_eq "$out" "0" "analogsticks alias follows the hatch override"
+out=$(env -i PATH="$PATH" sh -c "ANALOG_STICKS=2; . \"$SANDBOX/analogsticks.sh\"; printf '%s' \"\$ANALOGSTICKS\"")
+assert_eq "$out" "2" "analogsticks alias follows upstream ANALOG_STICKS without the hatch"
+# a second edit run (scratch copy, so $work's later assertions stay on the
+# first-run state) must not duplicate the alias line
+scratch="$SANDBOX/pmpak-analogsticks2"; mkdir -p "$scratch"
+cp "$work/pak.json" "$work/launch.sh" "$work/device_info.txt" "$scratch/"
+GT_STAGE_EDIT_ONLY="$scratch" sh "$ROOT/build/build-pak.sh" portmaster
+assert_eq "$(grep -c 'gt-h700-analogsticks' "$scratch/device_info.txt")" "1" "analogsticks alias idempotent on rerun"
+
 # --- remap hook: after the 4-space pugwash-reboot rm, before the GUI loop ---
 assert_contains "$work/launch.sh" 'gt-h700-remap-hook'
 # shellcheck disable=SC2016

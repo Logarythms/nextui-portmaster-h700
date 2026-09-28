@@ -77,6 +77,9 @@
                      * compiled under -DGT_REMAP_TEST with libc only — the
                      * interposer's SDL2/SDL.h, which would otherwise pull
                      * this in, is stripped from that build) */
+#include <fcntl.h>   /* F54: open — gt_read_whole (pure half, also used by the fixture mode) */
+#include <unistd.h>  /* F54: read, close */
+#include <errno.h>   /* F54: EINTR */
 
 /* F52: which measured raw-index table applies. Loaded once from
  * GT_INPUT_CLASS (exported by launch.sh's gt-h700-input-class block, derived
@@ -768,6 +771,122 @@ static int gt_menu_toggle(gt_tap_state *s, volatile int *visible, int is_menu, i
     return 0;                                 /* never swallow non-Menu events */
 }
 
+/* ======================================================================
+ * F54: gptokeyb passthrough — pure helpers (host-tested via test-30).
+ *
+ * NextUI's SDL2 is a no-libudev build: its evdev keyboard/mouse layer
+ * (SDL_EVDEV_Init) opens ONLY the devices named in SDL_EVDEV_DEVICES
+ * ("class:path,..."; class bits 1 = mouse, 2 = keyboard). Nothing on NextUI
+ * sets it, so gptokeyb's uinput "Fake Keyboard" was never opened and every
+ * keyboard/mouse port was input-dead — the whole reason the F26/F31 synthesis
+ * exists. Device-proven 2026-09-04 (RG SP, BYTEPATH: menus AND polled
+ * gameplay work through gptokeyb once the variable names its node). The
+ * interposer half resolves the node at SDL init and exports the variable;
+ * these helpers do the parsing and string building with libc only.
+ */
+#define GT_FAKE_KBD_NAME "Fake Keyboard"     /* gptokeyb AND gptokeyb2 */
+#define GT_EVDEV_CLASS_KBD_MOUSE 3           /* SDL_UDEV_DEVICE_MOUSE|KEYBOARD: the node
+                                              * advertises EV=7/REL=3 even for a
+                                              * keyboard-only gptk */
+#define GT_INPUT_DEVICES_CAP (64 * 1024)     /* /proc/bus/input/devices is ~1.5 KB here */
+
+/* Read a file whole with read(2) until EOF into buf (NUL-terminated, at most
+ * cap-1 bytes; a larger file is truncated and parsed as far as it goes).
+ * procfs must never be read with line-at-a-time shell semantics (F52 lesson:
+ * busybox `read` on /proc/bus/input/devices hangs); a single read loop is the
+ * safe shape. Returns bytes read, or -1 (errno set). */
+static long gt_read_whole(const char *path, char *buf, size_t cap) {
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    size_t got = 0;
+    while (got < cap - 1) {
+        ssize_t r = read(fd, buf + got, cap - 1 - got);
+        if (r < 0) { if (errno == EINTR) continue; close(fd); return -1; }
+        if (r == 0) break;
+        got += (size_t)r;
+    }
+    close(fd);
+    buf[got] = 0;
+    return (long)got;
+}
+
+/* Parse a NUL-terminated /proc/bus/input/devices snapshot and pick the
+ * "Fake Keyboard" stanza with the HIGHEST inputN in its
+ * "S: Sysfs=.../input/inputN" line: input numbers are monotonic for the boot
+ * while event numbers are recycled, so "newest" must key on inputN (Doom
+ * Engines starts gptokeyb twice). Writes "/dev/input/eventN" (eventN from the
+ * "H: Handlers=" line) into out. Returns 1 if found, else 0. A stanza missing
+ * either line is ignored; the name must match exactly. */
+static int gt_fake_kbd_resolve(const char *buf, char *out, size_t outsz) {
+    long best_input = -1, cur_input = -1;
+    int best_event = -1, cur_event = -1, in_fake = 0;
+    const size_t want = strlen(GT_FAKE_KBD_NAME);
+    const char *line = buf;
+    for (;;) {
+        const char *nl = strchr(line, '\n');
+        size_t n = nl ? (size_t)(nl - line) : strlen(line);
+        if (n == 0) {                                   /* blank line: stanza ends */
+            if (in_fake && cur_input >= 0 && cur_event >= 0 && cur_input > best_input) {
+                best_input = cur_input; best_event = cur_event;
+            }
+            in_fake = 0; cur_input = -1; cur_event = -1;
+        } else if (!strncmp(line, "N: Name=\"", 9)) {
+            in_fake = (n == 9 + want + 1 && !strncmp(line + 9, GT_FAKE_KBD_NAME, want)
+                       && line[9 + want] == '"');
+        } else if (!strncmp(line, "S: Sysfs=", 9)) {
+            const char *p = NULL, *q = line + 9;
+            while ((q = strstr(q, "/input")) && q < line + n) {   /* LAST "/input<digits>" wins */
+                if (q[6] >= '0' && q[6] <= '9') p = q + 6;
+                q += 6;
+            }
+            if (p) cur_input = strtol(p, NULL, 10);
+        } else if (!strncmp(line, "H: Handlers=", 12)) {
+            const char *q = line + 12;
+            while ((q = strstr(q, "event")) && q < line + n) {
+                if (q[5] >= '0' && q[5] <= '9' && (q[-1] == ' ' || q[-1] == '=')) {
+                    cur_event = (int)strtol(q + 5, NULL, 10);
+                    break;
+                }
+                q += 5;
+            }
+        }
+        if (!nl) break;
+        line = nl + 1;
+    }
+    if (in_fake && cur_input >= 0 && cur_event >= 0 && cur_input > best_input) {
+        best_input = cur_input; best_event = cur_event;   /* no trailing blank line */
+    }
+    if (best_event < 0) return 0;
+    snprintf(out, outsz, "/dev/input/event%d", best_event);
+    return 1;
+}
+
+/* "3:/dev/input/eventN" for SDL_EVDEV_DEVICES. Returns 0 if out is too small
+ * (the caller then leaves the variable alone). */
+static int gt_evdev_env_build(char *out, size_t outsz, const char *node) {
+    int n = snprintf(out, outsz, "%d:%s", GT_EVDEV_CLASS_KBD_MOUSE, node);
+    return (n > 0 && (size_t)n < outsz) ? 1 : 0;
+}
+
+/* 1 if a /proc/<pid>/cmdline buffer (len bytes, NUL-separated arguments)
+ * holds `arg` as one whole argument. F54 device-gate finding (2026-09-28):
+ * gptokeyb creates its uinput "Fake Keyboard" only when started with a
+ * mapping (-c <gptk>). Run without one, as native-controller ports do to get
+ * just the Select+Start quit watcher (Balatro, Deltarune, Mina, ...), it
+ * never creates a keyboard, and waiting 2 s for one delayed every such
+ * launch. */
+static int gt_cmdline_has_arg(const char *buf, size_t len, const char *arg) {
+    const size_t n = strlen(arg);
+    size_t i = 0;
+    while (i < len) {
+        size_t l = 0;
+        while (i + l < len && buf[i + l]) l++;
+        if (l == n && !memcmp(buf + i, arg, n)) return 1;
+        i += l + 1;
+    }
+    return 0;
+}
+
 #ifdef GT_REMAP_TEST
 
 static int fail(const char *what) { fprintf(stderr, "FAIL: %s\n", what); return 1; }
@@ -782,7 +901,17 @@ static int gt_count_fg(const uint32_t *buf, int w, int x0, int y0, int x1, int y
     return n;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    /* F54 fixture mode (test-30): resolve gptokeyb's node from a saved
+     * /proc/bus/input/devices snapshot. Prints the node path or "none". */
+    if (argc == 3 && !strcmp(argv[1], "--fake-kbd")) {
+        static char buf[GT_INPUT_DEVICES_CAP];
+        char node[64];
+        if (gt_read_whole(argv[2], buf, sizeof buf) < 0) { perror(argv[2]); return 1; }
+        puts(gt_fake_kbd_resolve(buf, node, sizeof node) ? node : "none");
+        return 0;
+    }
+    (void)argc; (void)argv;
     static const struct { unsigned char in, out; } cases[] = {
         /* gamepad buttons: measured device index → TrimUI-table index */
         {3, 1}, {4, 0}, {5, 2}, {6, 3}, {7, 4}, {8, 5},
@@ -1209,6 +1338,50 @@ int main(void) {
         if (en != 1 || es[0] != 1 || ep[0] != 1) return fail("evdev hat 0->down");
     }
 
+    /* F54: SDL_EVDEV_DEVICES string + parser selection rule */
+    {
+        char env[80], node[64];
+        if (!gt_evdev_env_build(env, sizeof env, "/dev/input/event3") || strcmp(env, "3:/dev/input/event3"))
+            return fail("evdev env string");
+        if (gt_evdev_env_build(env, 8, "/dev/input/event3"))
+            return fail("evdev env string: too-small buffer must fail");
+        static const char two[] =
+            "I: Bus=0003 Vendor=0000 Product=0000 Version=0000\n"
+            "N: Name=\"Fake Keyboard\"\n"
+            "S: Sysfs=/devices/virtual/input/input6\n"
+            "H: Handlers=sysrq kbd event3 \n"
+            "B: EV=7\n"
+            "\n"
+            "I: Bus=0003 Vendor=0000 Product=0000 Version=0000\n"
+            "N: Name=\"Fake Keyboard\"\n"
+            "S: Sysfs=/devices/virtual/input/input5\n"
+            "H: Handlers=sysrq kbd event4 \n"
+            "B: EV=7\n";                         /* no trailing blank line on purpose */
+        if (!gt_fake_kbd_resolve(two, node, sizeof node) || strcmp(node, "/dev/input/event3"))
+            return fail("fake kbd: highest inputN (input6 -> event3) must beat the higher eventN");
+        if (gt_fake_kbd_resolve("N: Name=\"Fake Keyboards\"\nS: Sysfs=/devices/virtual/input/input9\n"
+                                "H: Handlers=kbd event9 \n\n", node, sizeof node))
+            return fail("fake kbd: name must match exactly");
+        if (gt_fake_kbd_resolve("N: Name=\"Fake Keyboard\"\nH: Handlers=kbd event9 \n\n", node, sizeof node))
+            return fail("fake kbd: stanza without Sysfs line is ignored");
+        if (gt_fake_kbd_resolve("", node, sizeof node))
+            return fail("fake kbd: empty buffer -> none");
+        if (!gt_fake_kbd_resolve("N: Name=\"Fake Keyboard\"\nS: Sysfs=/devices/virtual/input/input2\n"
+                                 "H: Handlers=event7", node, sizeof node) || strcmp(node, "/dev/input/event7"))
+            return fail("fake kbd: handler directly after '=' and no trailing newline");
+        static const char cl_map[]    = "gptokeyb\0-1\0love.aarch64\0-c\0bytepath.gptk";
+        static const char cl_nomap[]  = "gptokeyb\0-1\0love.aarch64";
+        static const char cl_joined[] = "gptokeyb\0-cbytepath.gptk";
+        if (!gt_cmdline_has_arg(cl_map, sizeof cl_map, "-c"))
+            return fail("cmdline: a whole -c argument must be found");
+        if (gt_cmdline_has_arg(cl_nomap, sizeof cl_nomap, "-c"))
+            return fail("cmdline: no -c must read as no mapping");
+        if (gt_cmdline_has_arg(cl_joined, sizeof cl_joined, "-c"))
+            return fail("cmdline: -c must match a whole argument, not a prefix");
+        if (gt_cmdline_has_arg(cl_map, 0, "-c"))
+            return fail("cmdline: empty buffer holds no argument");
+    }
+
     puts("remap ok");
     return 0;
 }
@@ -1228,6 +1401,8 @@ int main(void) {
 #include <linux/input.h>   /* struct input_event, EV_KEY, KEY_MAX */
 #include <string.h>        /* strncmp, memset */
 #include <errno.h>         /* EINTR */
+
+static void gt_announce(int final);   /* F54: once-only log, defined with the passthrough block */
 
 #define GT_REMAPPED_MARKER 0x5A
 
@@ -1407,33 +1582,203 @@ static Uint8 gt_merged_keys[GT_NUM_SCANCODES];
 static int gt_ks_numkeys;
 static int gt_ks_active;
 
-/* One unconditional line at load: launch.sh redirects stderr into the pak
- * log, so this is the cheap on-device proof that the preload took effect. */
+/* F54: the gptk is parsed here, but NOTHING is printed. This constructor runs
+ * in every LD_PRELOAD'd child of run_port — bash, busybox tee, gptokeyb — and
+ * used to spam "loaded"/"HUD enabled"/"keyboard synthesis on" once per child.
+ * gt_announce() prints the same lines exactly once, from the first SDL entry
+ * point the shim sees, i.e. in the game. */
+static int gt_gptk_status;          /* 0 = no GT_REMAP_GPTK, 1 = parsed, -1 = cannot open */
+static const char *gt_gptk_path;
+static int gt_gptk_n;
+
 __attribute__((constructor))
 static void gt_init(void) {
-    fprintf(stderr, "gt-input-remap: loaded\n");
-    if (gt_hud_on()) {
-        fprintf(stderr, "gt-input-remap: HUD enabled\n");
-    }
     gt_layout_load(); /* F48: independent of GT_REMAP_GPTK/GT_EVDEV_KEYS below */
     gt_class_load();  /* F52: plain (RG SP) unless launch.sh exported GT_INPUT_CLASS=sticks */
-    if (gt_debug())
-        fprintf(stderr, "gt-input-remap: input class %s\n", gt_sticks_class ? "sticks" : "plain");
     const char *path = getenv("GT_REMAP_GPTK");
     if (!path || !*path) return;
+    gt_gptk_path = path;
     FILE *fh = fopen(path, "r");
-    if (!fh) {
-        fprintf(stderr, "gt-input-remap: cannot open GT_REMAP_GPTK=%s\n", path);
-        return;
-    }
+    if (!fh) { gt_gptk_status = -1; return; }
     gt_keymap_defaults(&gt_map);   /* F53: gptokeyb analog defaults; a parsed line overrides */
     char line[256];
     int n = 0;
     while (fgets(line, sizeof line, fh))
         n += gt_gptk_line(&gt_map, line);
     fclose(fh);
-    fprintf(stderr, "gt-input-remap: keyboard synthesis on, %d mapping(s) from %s\n",
-            n, path);
+    gt_gptk_n = n;
+    gt_gptk_status = 1;
+}
+
+/* ======================================================================
+ * F54: gptokeyb passthrough (device half; pure helpers live above the
+ * GT_REMAP_TEST split). Decided ONCE, at the first SDL_Init/SDL_InitSubSystem
+ * that brings up SDL_INIT_VIDEO — the video driver is what runs
+ * SDL_EVDEV_Init — in the game process only. On activation the gptk is
+ * unloaded: every synthesis path (v2 buttons/hats, F53 axes, F31 keystate
+ * merge, F45 evdev keys) keys on gt_map.loaded, so gptokeyb's real keyboard
+ * and mouse become the only source and nothing is delivered twice. Ports
+ * whose gptokeyb creates no keyboard (no -c mapping, e.g. Animal Crossing's
+ * pak launcher) or that run none keep the fallback. */
+enum gt_pt_state_e {
+    GT_PT_UNDECIDED = 0,   /* no video init seen yet */
+    GT_PT_ACTIVE,          /* SDL_EVDEV_DEVICES exported, synthesis off */
+    GT_PT_NO_GPTOKEYB,     /* no gptokeyb process: synthesis fallback */
+    GT_PT_NO_NODE,         /* gptokeyb runs but no Fake Keyboard node within the wait */
+    GT_PT_NO_MAPPING,      /* gptokeyb runs without -c: it never creates a keyboard, so no wait */
+    GT_PT_DISABLED,        /* GT_PASSTHROUGH=0 (blocklisted by run_port) */
+    GT_PT_PRESET,          /* the launcher set SDL_EVDEV_DEVICES itself: untouched */
+    GT_PT_SELF             /* this process IS gptokeyb (inherited preload) */
+};
+static enum gt_pt_state_e gt_pt_state;
+static char gt_pt_env[96];          /* "3:/dev/input/eventN", kept for the log */
+
+#define GT_PT_WAIT_MS 2000
+#define GT_PT_POLL_MS 50
+
+/* /proc/<pid>/comm = the 15-char task name + '\n'. Prefix match covers
+ * gptokeyb and gptokeyb2 (both name their uinput device "Fake Keyboard"). */
+static int gt_comm_is_gptokeyb(const char *path) {
+    char comm[32];
+    if (gt_read_whole(path, comm, sizeof comm) <= 0) return 0;
+    return strncmp(comm, "gptokeyb", 8) == 0;
+}
+
+/* 0 = no gptokeyb-named process other than ourselves; 1 = gptokeyb running
+ * without a mapping (no -c: it never creates the Fake Keyboard); 2 = at
+ * least one gptokeyb started with -c. No session/pgrp filter: a stale
+ * gptokeyb from a crashed launcher injects keys on every other CFW too, so
+ * attaching to it is the faithful behavior (documented limit). */
+static int gt_gptokeyb_state(void) {
+    DIR *d = opendir("/proc");
+    if (!d) return 0;
+    struct dirent *e; int st = 0; pid_t self = getpid();
+    while (st < 2 && (e = readdir(d))) {
+        if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
+        if ((pid_t)atol(e->d_name) == self) continue;
+        char path[288];   /* "/proc/" + d_name (<=255) + "/cmdline": no -Wformat-truncation */
+        snprintf(path, sizeof path, "/proc/%s/comm", e->d_name);
+        if (!gt_comm_is_gptokeyb(path)) continue;
+        char cl[4096];
+        snprintf(path, sizeof path, "/proc/%s/cmdline", e->d_name);
+        long n = gt_read_whole(path, cl, sizeof cl);
+        int s = (n > 0 && gt_cmdline_has_arg(cl, (size_t)n, "-c")) ? 2 : 1;
+        if (s > st) st = s;
+    }
+    closedir(d);
+    return st;
+}
+
+static int gt_fake_kbd_node(char *node, size_t nodesz) {
+    static char buf[GT_INPUT_DEVICES_CAP];
+    if (gt_read_whole("/proc/bus/input/devices", buf, sizeof buf) < 0) return 0;
+    return gt_fake_kbd_resolve(buf, node, nodesz);
+}
+
+static void gt_passthrough_decide(void) {
+    const char *pt = getenv("GT_PASSTHROUGH");
+    const char *pre = getenv("SDL_EVDEV_DEVICES");
+    if (pt && !strcmp(pt, "0"))  { gt_pt_state = GT_PT_DISABLED; return; }
+    if (pre && *pre)             { gt_pt_state = GT_PT_PRESET;   return; }
+    if (gt_comm_is_gptokeyb("/proc/self/comm")) { gt_pt_state = GT_PT_SELF; return; }
+    int gk = gt_gptokeyb_state();
+    if (!gk)                     { gt_pt_state = GT_PT_NO_GPTOKEYB; return; }
+    char node[64];
+    int waited = 0;
+    while (!gt_fake_kbd_node(node, sizeof node)) {     /* gptokeyb is up; its node may lag */
+        if (gk < 2)                  { gt_pt_state = GT_PT_NO_MAPPING; return; }   /* no -c: no keyboard will come */
+        if (waited >= GT_PT_WAIT_MS) { gt_pt_state = GT_PT_NO_NODE; return; }
+        usleep(GT_PT_POLL_MS * 1000);
+        waited += GT_PT_POLL_MS;
+    }
+    if (!gt_evdev_env_build(gt_pt_env, sizeof gt_pt_env, node)) { gt_pt_state = GT_PT_NO_NODE; return; }
+    setenv("SDL_EVDEV_DEVICES", gt_pt_env, 1);   /* overwrite=1: the precondition admits an empty value */
+    gt_map.loaded = 0;                            /* the single gate of every synthesis path */
+    gt_pt_state = GT_PT_ACTIVE;
+}
+
+/* Run the decision once, on the first init that brings up VIDEO. SDL_Init
+ * calls SDL_InitSubSystem internally (through the PLT on some builds), so the
+ * interposer below can fire twice for one app call — the guard makes the
+ * second pass a no-op. */
+static void gt_passthrough_on_init(Uint32 flags) {
+    static int done;
+    if (done || !(flags & SDL_INIT_VIDEO)) return;
+    done = 1;
+    gt_passthrough_decide();
+}
+
+/* The announcement, once per process, in the game only (silent inside
+ * gptokeyb, which also links SDL and would otherwise print too). Two halves
+ * with separate latches: "loaded" / "HUD enabled" print at the first SDL
+ * entry point; the passthrough and synthesis lines wait for the decision.
+ * LÖVE (and any engine that initialises EVENTS or JOYSTICK before VIDEO)
+ * reaches SDL_InitSubSystem well before the video init that decides, and a
+ * single latch there logged "not evaluated" and "keyboard synthesis on" for a
+ * game that was running under passthrough (device gate 2026-09-27, BYTEPATH).
+ * final=0 (the init interposers) defers while undecided; final=1 (the event
+ * poll / present safety net) prints whatever state holds by then. */
+static void gt_announce(int final) {
+    static int head_done, tail_done;
+    if (tail_done) return;
+    if (!head_done) {
+        head_done = 1;
+        if (gt_comm_is_gptokeyb("/proc/self/comm")) { tail_done = 1; return; }
+        fprintf(stderr, "gt-input-remap: loaded\n");
+        if (gt_hud_on()) fprintf(stderr, "gt-input-remap: HUD enabled\n");
+        if (gt_debug())
+            fprintf(stderr, "gt-input-remap: input class %s\n", gt_sticks_class ? "sticks" : "plain");
+    }
+    if (!final && gt_pt_state == GT_PT_UNDECIDED) return;   /* wait for the video init */
+    tail_done = 1;
+    switch (gt_pt_state) {
+    case GT_PT_ACTIVE:
+        fprintf(stderr, "gt-input-remap: gptokeyb passthrough -> %s (synthesis off)\n", gt_pt_env);
+        break;
+    case GT_PT_NO_NODE:
+        fprintf(stderr, "gt-input-remap: gptokeyb running but no Fake Keyboard node after %d ms -> synthesis fallback\n",
+                GT_PT_WAIT_MS);
+        break;
+    case GT_PT_NO_MAPPING:
+        if (gt_debug()) fprintf(stderr, "gt-input-remap: gptokeyb has no keyboard mapping (-c) -> no passthrough\n");
+        break;
+    case GT_PT_UNDECIDED:
+        fprintf(stderr, "gt-input-remap: gptokeyb passthrough not evaluated (no SDL video init seen)\n");
+        break;
+    case GT_PT_NO_GPTOKEYB:
+        if (gt_debug()) fprintf(stderr, "gt-input-remap: no gptokeyb -> synthesis fallback\n");
+        break;
+    case GT_PT_DISABLED:
+        if (gt_debug()) fprintf(stderr, "gt-input-remap: gptokeyb passthrough disabled (GT_PASSTHROUGH=0)\n");
+        break;
+    case GT_PT_PRESET:
+        if (gt_debug()) fprintf(stderr, "gt-input-remap: SDL_EVDEV_DEVICES preset by the launcher -> untouched\n");
+        break;
+    case GT_PT_SELF:
+        break;
+    }
+    if (gt_gptk_status < 0)
+        fprintf(stderr, "gt-input-remap: cannot open GT_REMAP_GPTK=%s\n", gt_gptk_path);
+    else if (gt_gptk_status > 0 && gt_map.loaded)
+        fprintf(stderr, "gt-input-remap: keyboard synthesis on, %d mapping(s) from %s\n", gt_gptk_n, gt_gptk_path);
+    else if (gt_gptk_status > 0)
+        fprintf(stderr, "gt-input-remap: keyboard synthesis off (gptokeyb passthrough)\n");
+}
+
+int SDL_Init(Uint32 flags) {
+    static int (*real)(Uint32);
+    if (!real) real = (int (*)(Uint32))dlsym(RTLD_NEXT, "SDL_Init");
+    gt_passthrough_on_init(flags);
+    gt_announce(0);
+    return real ? real(flags) : -1;
+}
+
+int SDL_InitSubSystem(Uint32 flags) {
+    static int (*real)(Uint32);
+    if (!real) real = (int (*)(Uint32))dlsym(RTLD_NEXT, "SDL_InitSubSystem");
+    gt_passthrough_on_init(flags);
+    gt_announce(0);
+    return real ? real(flags) : -1;
 }
 
 /* Debug-only event trace, capped so an axis-jitter flood can't fill the
@@ -1462,10 +1807,13 @@ static void gt_trace(const char *src, SDL_Event *ev) {
  * itself — lazily, on the first event poll after SDL's video or joystick
  * subsystem is up (the constructor is too early), initializing the joystick
  * subsystem if the app never did. Opens are refcounted by SDL, so an app
- * that also opens the pad is unaffected. */
+ * that also opens the pad is unaffected.
+ * F54: under gptokeyb passthrough the gptk is unloaded, so this never runs
+ * and a keyboard-only game receives no joystick events it would not get on
+ * any other device — and the log line below is only ever true again. */
 static void gt_ensure_joystick_open(void) {
     static int done;
-    if (done || !(gt_map.loaded || gt_hud_on())) return;
+    if (done || !gt_map.loaded) return;   /* F54: synthesis only — the HUD toggle is evdev (F35) */
     static Uint32 (*was_init)(Uint32);
     static int (*init_sub)(Uint32);
     static int (*num_joy)(void);
@@ -1661,6 +2009,7 @@ const Uint8 *SDL_GetKeyboardState(int *numkeys) {
 }
 
 int SDL_PollEvent(SDL_Event *ev) {
+    gt_announce(1);
     static int (*real)(SDL_Event *);
     if (!real) real = (int (*)(SDL_Event *))dlsym(RTLD_NEXT, "SDL_PollEvent");
     gt_ensure_joystick_open();
@@ -1680,6 +2029,7 @@ int SDL_PollEvent(SDL_Event *ev) {
 }
 
 int SDL_WaitEventTimeout(SDL_Event *ev, int timeout) {
+    gt_announce(1);
     static int (*real)(SDL_Event *, int);
     if (!real) real = (int (*)(SDL_Event *, int))dlsym(RTLD_NEXT, "SDL_WaitEventTimeout");
     gt_ensure_joystick_open();
@@ -2198,6 +2548,7 @@ static int gt_in_swap;   /* reentrancy guard for the nested egl call */
 /* Signature matches SDL_video.h's prototype (SDL_Window*, not void*) — SDL.h
  * is included, so the declared and defined types must agree. */
 void SDL_GL_SwapWindow(SDL_Window *win) {
+    gt_announce(1);
     gt_evdev_ensure();
     static void (*real)(SDL_Window*); if (!real) real = (void(*)(SDL_Window*))dlsym(RTLD_NEXT, "SDL_GL_SwapWindow");
     if (gt_hud_debug()) { static int once; if (!once) { once = 1;
@@ -2206,6 +2557,7 @@ void SDL_GL_SwapWindow(SDL_Window *win) {
 }
 
 unsigned int eglSwapBuffers(void *dpy, void *surf) {
+    gt_announce(1);
     gt_evdev_ensure();
     static unsigned int (*real)(void*,void*); if (!real) real = (unsigned int(*)(void*,void*))dlsym(RTLD_NEXT, "eglSwapBuffers");
     if (gt_hud_debug()) { static int once; if (!once) { once = 1;
@@ -2336,6 +2688,7 @@ static void gt_hud_draw_sw(SDL_Renderer *r) {
 }
 
 void SDL_RenderPresent(SDL_Renderer *r) {
+    gt_announce(1);
     gt_evdev_ensure();
     static void (*real)(SDL_Renderer*);
     if (!real) real = (void (*)(SDL_Renderer*))dlsym(RTLD_NEXT, "SDL_RenderPresent");

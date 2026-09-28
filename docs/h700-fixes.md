@@ -486,7 +486,9 @@ format is honored (letters, digits, space/esc/tab/enter/backspace,
 modifiers, arrows) — hold-state layers, mouse emulation, and analog
 handling are ignored (the RG SP has no sticks). This half covers
 event-consuming games; games that instead *poll* `SDL_GetKeyboardState`
-are handled by the state-polling half added in F31.
+are handled by the state-polling half added in F31. Since F54 this synthesis
+is the fallback only: when the port's own gptokeyb is running, the shim hands
+its uinput device to SDL instead (see F54 at the end of this file).
 
 ## Broken binaries inside a port: the port-fixes overlay (F27)
 
@@ -659,6 +661,11 @@ in general, so ports fall into three honest tiers:
 
 The gamepad-to-keyboard translation tool itself does not interfere with
 tier-1 input and is left enabled by default.
+
+F54 update: the platform limitation described here was a configuration gap,
+not a wall — NextUI's SDL opens the translation tool's device once told about
+it, so the gamepad-to-keyboard tier now works through the tool itself on every
+port by default; see F54.
 
 ## In-game status overlay (F34)
 
@@ -1726,3 +1733,132 @@ Out of scope: NextUI tracks speaker and headphone volume as separate fields
 gated by a jack flag; the HUD reads the speaker field (offset 16) as it always
 has, so with headphones plugged the gauge shows the speaker level. That was the
 pre-existing behavior and is unchanged here.
+
+## gptokeyb passthrough: SDL finally sees the virtual keyboard (F54)
+
+Seven of the nine ports in GitHub issue #1 are keyboard-and-mouse games that
+every other PortMaster device serves through gptokeyb's virtual uinput
+keyboard. F8 recorded that this device "never reaches games" on NextUI and
+F26/F31/F53 built an SDL-layer re-implementation of gptokeyb inside the shim
+for allowlisted ports — keyboard only, no mouse. The 2026-09-04 device pass
+on the RG SP found the actual mechanism: NextUI's SDL2 fork is a
+**no-libudev** build, and upstream SDL's evdev keyboard/mouse layer
+(`SDL_EVDEV_Init`) then opens **only** the devices listed in the environment
+variable `SDL_EVDEV_DEVICES` (`class:path,…`; class bits 1 = mouse,
+2 = keyboard). Nothing on NextUI sets it, so no keyboard or mouse device was
+ever opened — gptokeyb's output was dead not because the platform could not
+deliver it, but because SDL was never told where it was. Exporting
+`SDL_EVDEV_DEVICES=2:/dev/input/event3` (gptokeyb's node that day) in the
+BYTEPATH launcher, with the shim's synthesis off, made BYTEPATH's
+event-driven menus **and** its polled gameplay work through gptokeyb itself.
+
+- **Mechanism.** The shim (`gt-input-remap.so`, preloaded into every h700
+  port) interposes `SDL_Init`/`SDL_InitSubSystem`. On the first call that
+  brings up the video subsystem it scans `/proc/*/comm` for a process named
+  `gptokeyb`/`gptokeyb2`; if one exists it reads `/proc/bus/input/devices`
+  whole and picks the `Fake Keyboard` stanza with the highest `inputN`
+  (input numbers are monotonic for the boot, event numbers are recycled —
+  Doom Engines starts gptokeyb twice), waiting up to 2 s for the node to
+  appear — but only when some gptokeyb was started with a mapping (`-c`).
+  Without one gptokeyb never creates its virtual keyboard (native-controller
+  ports run it only as the Select+Start quit watcher: Balatro, Deltarune,
+  Mina the Hollower, …), so the shim checks once and moves on instead of
+  holding the game's start for 2 s (device-gate finding). It then exports
+  `SDL_EVDEV_DEVICES=3:/dev/input/eventN` — class 3, keyboard **and** mouse,
+  because gptokeyb's node advertises `EV=7`/`REL=3` even for a keyboard-only
+  gptk — unloads the gptk so every synthesis path goes quiet, and calls the
+  real init. Ports without a keyboard-producing gptokeyb (Animal Crossing's
+  pak launcher runs it without a mapping, F45) fall back to the shim's
+  synthesis unchanged. A launcher that sets `SDL_EVDEV_DEVICES` itself is
+  respected.
+- **Policy.** Passthrough is **on for every h700 port**, opt-out via the
+  pak-shipped `files/gt-passthrough-blocklist.txt` or the user's
+  `use-passthrough-blocklist` (`GT_PASSTHROUGH=0`), the same shape as the HUD
+  and sleep blocklists. The F25/F26 allowlist (`gt-remap-ports.txt` /
+  `use-remap-ports`) is unchanged: it still gates the joystick index remap and
+  arms the synthesis fallback, which passthrough suppresses at runtime.
+- **Sonic 1/2 are blocklisted.** Their launchers do run gptokeyb — against
+  the very `sonic.gptk` this pak overlays (F43) — but gptokeyb's face naming
+  follows the controller database while the shim's follows the v1 index remap
+  plus the F48 layout flip, and whether physical A/B land on the same keys is
+  unverified. They keep the device-verified synthesis path; migrating them is
+  a follow-up.
+- **Launchers that overwrite `LD_PRELOAD`.** Doom Engines runs its engine
+  with `export LD_PRELOAD="$GAMEDIR/libs/hacksdl.so"`, dropping every pak shim.
+  `run_port` now snapshots the final pak preload chain as `GT_LD_PRELOAD`
+  right before executing the launcher and, inside the F32 mtime window, runs
+  `files/gt-preload-append.sh`, which rewrites every overwrite-style
+  `export LD_PRELOAD=` line to prepend that snapshot (idempotent; append-style
+  and commented lines untouched; a launcher without such a line is never
+  rewritten). `copy_game_scripts` reverts launchers each GUI session; the
+  hook re-patches every launch.
+- **`ANALOGSTICKS` alias.** OpenTTD's launcher picks its gptk as
+  `openttd.gptk.$ANALOGSTICKS`, a name this PortMaster's `device_info.txt`
+  never set (it has only `ANALOG_STICKS`), so gptokeyb got `openttd.gptk.`
+  and loaded no mapping — the d-pad mouse was dead. Invisible until F54 let
+  gptokeyb input reach games (device-gate finding). The pak's
+  `device_info.txt` now also exports `ANALOGSTICKS`, equal to the resolved
+  `ANALOG_STICKS` (after the `use-stickless` override).
+- **Shim hygiene.** The constructor no longer logs — it used to print
+  "loaded"/"HUD enabled"/"keyboard synthesis on" from every preloaded child
+  (bash, tee, gptokeyb). The announcement now prints in the game only:
+  "loaded" / "HUD enabled" at the first SDL entry point, the passthrough
+  decision and the synthesis state once that decision exists at the video
+  init. (The first version printed everything at the first SDL call; LÖVE
+  initialises events and joystick before video, so BYTEPATH logged "not
+  evaluated" and "keyboard synthesis on" while running under passthrough —
+  caught by the device gate.) Joystick opens follow synthesis only (the
+  HUD toggle has been evdev-driven since F35), so the line "opened N/N
+  joystick(s) for key synthesis" is true again and a keyboard-only game under
+  passthrough receives no joystick events it would not get on any other
+  device.
+
+**Known limits.** Engines that load SDL through `dlopen`+`dlsym` (mono/FNA)
+bypass every preload interposer and get no passthrough (no known
+gptokeyb-tier port uses them). An engine whose video comes up inside SDL
+without an `SDL_Init` / `SDL_InitSubSystem` call carrying `SDL_INIT_VIDEO`
+(e.g. relying on `SDL_CreateWindow`'s implicit video init) gets no
+passthrough either; its log then reads `gptokeyb passthrough not evaluated
+(no SDL video init seen)`. A stale gptokeyb left by a crashed launcher is
+attached to, as it would be on any other CFW. `unset LD_PRELOAD` in a
+launcher is not repaired. SDL's evdev keyboard layer may mute the console
+keyboard while a game runs; the mode was observed restored after a normal
+exit (`K_UNICODE`).
+
+**Device gate (RG SP, NextUI h700-rc10, 2026-09-27/28):** run on the final
+F54 build; every result below is from the port's `PORTS.txt` plus play on the
+device.
+
+1. BYTEPATH, allowlisted — **PASS**: menus and ship normal; one
+   `gt-input-remap: loaded`, `gptokeyb passthrough -> 3:/dev/input/event3
+   (synthesis off)`, `keyboard synthesis off (gptokeyb passthrough)`, no
+   joystick-open line; the game held the Fake Keyboard (`event3`) open.
+2. BYTEPATH, removed from the allowlist — **PASS**: same play, passthrough
+   line present, no `Enabling input remap`.
+3. Tunics! — **PASS**: title/movement/menus fine, no doubled actions; log has
+   both `Enabling input remap` and the passthrough line.
+4. Sonic 1, blocklisted — **PASS**: `gptokeyb passthrough disabled
+   (blocklisted) for Sonic 1.sh`, `keyboard synthesis on, 8 mapping(s)`;
+   jump/pause as in v0.4.0.
+5. OpenTTD mouse — **PASS**: d-pad moves the cursor, A clicks, B slows it.
+6. OpenTTD text input — **PASS**: L2/R2 typed `-`/`=` into the Multiplayer
+   player-name field. (Y is unassigned in the port's own gptk; X is forward
+   Delete and could not be exercised with the text cursor at the end.)
+7. Doom Engines — **DEFERRED**: needs the v0.4.1 library pins (F58), not yet
+   on the device.
+8. HUD toggle + sleep/resume during a passthrough port (BYTEPATH) — **PASS**:
+   Menu toggles the overlay; power sleeps, power resumes with music.
+9. Select+Start quit — **PASS**: ports quit, NextUI responsive.
+10. Balatro — **PASS**: one press = one action. Its launcher runs gptokeyb
+    without a mapping, so passthrough never engages there by design.
+
+The gate found three defects, fixed on this branch before the final run: (a)
+the announcement printed before LÖVE's video init decided, so BYTEPATH logged
+"not evaluated" / "synthesis on" while running under passthrough; (b)
+gptokeyb without `-c` made every such launch wait the full 2 s; (c)
+OpenTTD's `$ANALOGSTICKS` gptk path (see the bullets above).
+
+**Follow-ups.** Sonic 1/2 off the blocklist after a device check of
+gptokeyb's face naming against the overlaid gptk; mouse synthesis as a
+fallback only if a gptokeyb-less mouse port ever appears; upstream, NextUI's
+SDL could scan `/dev/input` itself and make this step unnecessary.

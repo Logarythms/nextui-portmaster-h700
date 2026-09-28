@@ -445,6 +445,28 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-preload-append: F54 — launchers that OVERWRITE LD_PRELOAD (Doom
+  # Engines: export LD_PRELOAD="$GAMEDIR/libs/hacksdl.so") drop every pak shim
+  # from the game. files/gt-preload-append.sh rewrites those lines to prepend
+  # run_port's snapshot of the pak chain (GT_LD_PRELOAD, exported by
+  # gt-h700-preload-snapshot just before the launcher runs). Same F32 mtime
+  # window as the Sonic width rewrite, so the edit never retriggers
+  # rebuild-if-newer ports; copy_game_scripts reverts the launcher each GUI
+  # session and this re-patches every launch (the helper is idempotent).
+  if ! grep -q 'gt-h700-preload-append' "$f"; then
+    awk '
+    $0 == "    touch -r \"$ROM_PATH\" \"$gt_launcher_mtime_ref\"" {
+      print
+      print ""
+      print "    # gt-h700-preload-append: F54 — keep the pak shims in launchers that overwrite LD_PRELOAD"
+      print "    if [ \"$PLATFORM\" = \"h700\" ]; then"
+      print "        sh \"$PAK_DIR/files/gt-preload-append.sh\" \"$ROM_PATH\""
+      print "    fi"
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   # gt-h700-presenter-kill: F15 — every in-pak kill of the presenter via the
   # upstream killall silently no-ops: create_busybox_wrappers + the pak PATH
   # shadow it with the pinned bullseye busybox, whose killall never matches
@@ -734,6 +756,9 @@ edit_portmaster_launch() { # $1=launch.sh path
   # the opposite shape: GT_HUD=1 by default for every port, opt-OUT via
   # files/gt-hud-blocklist.txt (pak-shipped) or the user's
   # use-hud-blocklist, for ports where the overlay is known to misbehave.
+  # F54: a third gate of the HUD shape — files/gt-passthrough-blocklist.txt /
+  # use-passthrough-blocklist — exports GT_PASSTHROUGH=0 for ports kept on the
+  # shim's synthesis; passthrough is otherwise on for every port.
   if ! grep -q 'gt-h700-port-remap' "$f"; then
     awk '$0 == "    \"$PAK_DIR/bin/bash\" \"$ROM_PATH\"" {
       print "    # gt-h700-port-remap / gt-h700-hud (F25/F26/F34)"
@@ -757,6 +782,13 @@ edit_portmaster_launch() { # $1=launch.sh path
       print "            echo \"HUD disabled (blocklisted) for $ROM_NAME\""
       print "        else"
       print "            export GT_HUD=1"
+      print "        fi"
+      print "        # gptokeyb passthrough (F54) is opt-out (blocklist): the shim exports"
+      print "        # SDL_EVDEV_DEVICES for the gptokeyb uinput node unless GT_PASSTHROUGH=0"
+      print "        if grep -Fxq \"$ROM_NAME\" \"$PAK_DIR/files/gt-passthrough-blocklist.txt\" 2>/dev/null \\"
+      print "            || grep -Fxq \"$ROM_NAME\" \"$USERDATA_PATH/PORTS-portmaster/use-passthrough-blocklist\" 2>/dev/null; then"
+      print "            echo \"gptokeyb passthrough disabled (blocklisted) for $ROM_NAME\""
+      print "            export GT_PASSTHROUGH=0"
       print "        fi"
       print "    fi"
       print ""
@@ -1170,6 +1202,22 @@ edit_portmaster_launch() { # $1=launch.sh path
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 
+  # gt-h700-preload-snapshot: F54 — freeze the complete pak preload chain for
+  # the launcher lines gt-preload-append.sh rewrites. Inserted LAST in this
+  # function on purpose: every preload-composing hook above prints its block
+  # before the launcher exec line, so this one lands immediately before the
+  # exec and sees the final chain. Keep it last when adding hooks.
+  if ! grep -q 'gt-h700-preload-snapshot' "$f"; then
+    awk '$0 == "    \"$PAK_DIR/bin/bash\" \"$ROM_PATH\"" {
+      print "    # gt-h700-preload-snapshot (F54): the pak chain, frozen for the preload-append helper"
+      print "    export GT_LD_PRELOAD=\"${LD_PRELOAD:-}\""
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
   rm -f "$f.bak"
 }
 
@@ -1196,6 +1244,17 @@ edit_portmaster_device_info() { # $1=PortMaster/device_info.txt path
     awk '$0 == "export ANALOG_STICKS" {
       print "ANALOG_STICKS=${GT_ANALOG_STICKS:-$ANALOG_STICKS}  # gt-h700-stickless (F53): use-stickless flag override"
     } { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-analogsticks: F54 device-gate finding — some launchers (OpenTTD:
+  # openttd.gptk.$ANALOGSTICKS) spell the stick count without the underscore,
+  # which this PortMaster's device_info.txt never sets, so gptokeyb got a
+  # mapping path ending in "." and loaded nothing. Export the alias right
+  # after upstream's export, i.e. after the use-stickless override above.
+  if ! grep -q 'gt-h700-analogsticks' "$f"; then
+    awk '{ print } $0 == "export ANALOG_STICKS" {
+      print "export ANALOGSTICKS=\"$ANALOG_STICKS\"  # gt-h700-analogsticks: alias for launchers without the underscore (OpenTTD)"
+    }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
   fi
 }
 
@@ -1589,6 +1648,13 @@ PMEOF
   # in-game HUD overlay is known to misbehave (read by the same run_port
   # hook); users extend via use-hud-blocklist in userdata without rebuilding.
   cp "$ASSETS/gt-hud-blocklist.txt" "$assembled/files/gt-hud-blocklist.txt"
+
+  # gt-h700-passthrough: F54 — pak-shipped blocklist of ports kept on the shim's
+  # own key synthesis instead of gptokeyb passthrough (Sonic 1/2, see docs), and
+  # the launcher-line helper run_port calls inside the mtime window.
+  cp "$ASSETS/gt-passthrough-blocklist.txt" "$assembled/files/gt-passthrough-blocklist.txt"
+  cp -f "$ASSETS/gt-preload-append.sh" "$assembled/files/gt-preload-append.sh"
+  chmod +x "$assembled/files/gt-preload-append.sh"
 
   # gt-h700-sleepmon / gt-h700-alsa-suspend: F47 — sleep watcher + ALSA
   # suspend-proxy (see edit_portmaster_launch). Fail closed on arch so a

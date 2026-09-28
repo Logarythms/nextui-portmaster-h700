@@ -1,0 +1,18 @@
+# gt-passthrough-blocklist.txt — ports that keep the shim's own key synthesis
+# (F26/F31/F53) instead of gptokeyb passthrough (F54). One launcher filename
+# per line (exact, e.g. "SomePort.sh"). Comment lines (leading #) are inert.
+# Passthrough is ON by default for every other h700 port: at SDL init the shim
+# tells NextUI's SDL about gptokeyb's "Fake Keyboard" uinput node
+# (SDL_EVDEV_DEVICES), so the port's own gptokeyb delivers keyboard AND mouse
+# exactly as on other CFWs, and the shim's synthesis stays off. Users add their
+# own entries in $USERDATA_PATH/PORTS-portmaster/use-passthrough-blocklist (no
+# rebuild needed) — e.g. a port that double-fires under passthrough.
+#
+# Sonic 1/2 (F43): their launchers DO run gptokeyb, against the very sonic.gptk
+# this pak overlays. Under passthrough gptokeyb would read that file itself,
+# but its face naming follows the controller database while the shim's follows
+# the v1 index remap + F48 layout flip — whether physical A/B land on the same
+# keys is unverified. Kept on the device-verified synthesis path until a device
+# gate says otherwise (follow-up recorded in docs/h700-fixes.md, F54).
+Sonic 1.sh
+Sonic 2.sh
