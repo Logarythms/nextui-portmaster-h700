@@ -1,0 +1,19 @@
+gl4es fake EGL (libEGL.so.1), shipped as lib/gl4es-egl/libEGL.so.1 - F60
+source: https://github.com/ptitSeb/gl4es (MIT)
+commit: 81547d986798e876de8b434193920b606a72363f
+built: 2026-09-18T12:51Z in debian:bullseye linux/arm64 (build/gl4es-egl.sh), stripped (kept the eglStub symbol)
+cmake: -DNOX11=ON -DGLX_STUBS=ON -DEGL_WRAPPER=ON -DCMAKE_BUILD_TYPE=Release
+size: 27384 bytes
+sha256: d7c84a6de11903611a58a675a561bbb95da39541c85983d5dfe8fc7762791dba
+
+DT_NEEDED:
+  libGL.so.1
+  libc.so.6
+
+undefined non-glibc symbols (resolved from the PORT's own gl4es libGL.so.1 at load):
+  LogPrintf
+  egl
+  gl4es_GetProcAddress
+  gl4es_glXGetProcAddress
+  hardext
+  proc_address

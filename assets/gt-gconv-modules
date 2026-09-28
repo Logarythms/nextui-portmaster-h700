@@ -1,0 +1,30 @@
+# gt-gconv-modules: F64 — trimmed glibc gconv-modules for the pak's lib/gconv/
+# (run_port exports GCONV_PATH to that dir on NextUI-h700, which ships no gconv).
+# Lines copied verbatim from Ubuntu jammy libc6 2.35-0ubuntu3's
+# usr/lib/aarch64-linux-gnu/gconv/gconv-modules; only the modules the pak ships
+# (UTF-16.so, UTF-32.so) are listed. glibc's builtins (UTF-8, UCS-4, WCHAR_T,
+# INTERNAL, ...) need no entry.
+#	from			to			module		cost
+alias	UTF16//			UTF-16//
+module	UTF-16//		INTERNAL		UTF-16		1
+module	INTERNAL		UTF-16//		UTF-16		1
+#	from			to			module		cost
+alias	UTF16LE//		UTF-16LE//
+module	UTF-16LE//		INTERNAL		UTF-16		1
+module	INTERNAL		UTF-16LE//		UTF-16		1
+#	from			to			module		cost
+alias	UTF16BE//		UTF-16BE//
+module	UTF-16BE//		INTERNAL		UTF-16		1
+module	INTERNAL		UTF-16BE//		UTF-16		1
+#	from			to			module		cost
+alias	UTF32//			UTF-32//
+module	UTF-32//		INTERNAL		UTF-32		1
+module	INTERNAL		UTF-32//		UTF-32		1
+#	from			to			module		cost
+alias	UTF32LE//		UTF-32LE//
+module	UTF-32LE//		INTERNAL		UTF-32		1
+module	INTERNAL		UTF-32LE//		UTF-32		1
+#	from			to			module		cost
+alias	UTF32BE//		UTF-32BE//
+module	UTF-32BE//		INTERNAL		UTF-32		1
+module	INTERNAL		UTF-32BE//		UTF-32		1

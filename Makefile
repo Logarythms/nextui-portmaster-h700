@@ -1,5 +1,5 @@
 .POSIX:
-.PHONY: pak test clean shim
+.PHONY: pak test clean shim gl4es-egl
 
 pak:
 	sh build/build-pak.sh portmaster
@@ -14,7 +14,7 @@ clean:
 # Debian bullseye is EOL/archived (~2026-08); deb.debian.org no longer serves it
 # (the debian-security pool 404s), so the shim toolchain pins apt to a pre-EOL
 # snapshot. Bump BULLSEYE_SNAPSHOT if a needed package version predates it.
-# (The pak's own pinned .debs in pins.sh are a separate archived-URL breakage.)
+# (The pak's own pinned .debs in pins.sh point at the same snapshot date.)
 BULLSEYE_SNAPSHOT = 20260801T000000Z
 APT_PIN = printf "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/$(BULLSEYE_SNAPSHOT) bullseye main\ndeb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/$(BULLSEYE_SNAPSHOT) bullseye-security main\n" > /etc/apt/sources.list && apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Retries=3 update -qq
 
@@ -44,3 +44,16 @@ shim:
 	   gcc -O2 -Wall -shared -fPIC -o gt-input-remap.armhf.so gt-input-remap.c -ldl -pthread && strip gt-input-remap.armhf.so && \
 	   gcc -O2 -Wall -shared -fPIC -DPIC -o libasound_module_pcm_gt_suspend.armhf.so gt-alsa-suspend.c -lasound && strip libasound_module_pcm_gt_suspend.armhf.so'
 	file assets/gt-input-remap.so assets/gt-fmod-audio.so assets/gt-gles3-profile.so assets/gt-sdl-audio-init.so assets/gt-sleepmon assets/gt-input-remap.armhf.so assets/libasound_module_pcm_gt_suspend.so assets/libasound_module_pcm_gt_suspend.armhf.so
+
+# F60: gl4es's fake EGL from a pinned ptitSeb/gl4es commit (master as of 2026-07-25),
+# arm64 bullseye lane like `shim`. Outputs assets/gl4es-libEGL.so.1 + .txt provenance.
+# Commit the outputs; build-pak.sh stages the .so under lib/gl4es-egl/ (a subdir on
+# purpose - lib/ itself is on every port's LD_LIBRARY_PATH).
+GL4ES_COMMIT = 81547d986798e876de8b434193920b606a72363f
+# The gl4es lane pins apt to the same BULLSEYE_SNAPSHOT as `make shim` (defined
+# above); build/gl4es-egl.sh writes the sources.list itself from the env var.
+
+gl4es-egl:
+	docker pull --platform linux/arm64 debian:bullseye
+	docker run --rm --platform linux/arm64 -v "$$PWD:/repo" -w /repo -e GL4ES_COMMIT=$(GL4ES_COMMIT) -e BULLSEYE_SNAPSHOT=$(BULLSEYE_SNAPSHOT) debian:bullseye sh /repo/build/gl4es-egl.sh
+	file assets/gl4es-libEGL.so.1

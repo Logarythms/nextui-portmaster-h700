@@ -102,4 +102,19 @@ assert_contains "$ROOT/build/build-pak.sh" 'gt-sleepmon is not an aarch64 execut
 assert_contains "$ROOT/build/build-pak.sh" 'gt_suspend plugin is not an aarch64 shared object'
 assert_contains "$ROOT/build/build-pak.sh" 'gt_suspend armhf plugin is not a 32-bit ARM shared object'
 
+# ---------- F55: pcm.default carries a hint{} block (SDL enumerates ONLY hinted pcms) ----------
+# alsa-lib's snd_device_name_hint() skips hint-less pcm nodes unless
+# defaults.namehint.showall is set (it isn't: this file is self-contained), so
+# without the block SDL2's ALSA backend saw ZERO audio devices and the EDuke32
+# family died at sound init on strdup(NULL) since 0.4.0 (issue #1, device-proven
+# 2026-09-04 with aplay -L: nothing -> exactly "default"). The block must sit
+# INSIDE pcm.default, and the routing through gt_suspend must be untouched.
+awk '/^pcm\.default \{/{f=1} f{print} f&&/^\}/{exit}' "$ROOT/assets/gt-asound.conf" > "$SANDBOX/pcm-default.txt"
+assert_contains "$SANDBOX/pcm-default.txt" 'hint {'
+assert_contains "$SANDBOX/pcm-default.txt" 'show on'
+assert_contains "$SANDBOX/pcm-default.txt" 'description "'
+assert_contains "$SANDBOX/pcm-default.txt" 'type gt_suspend'
+assert_contains "$SANDBOX/pcm-default.txt" 'slave.pcm "gt_stock_slave"'
+assert_not_contains "$ROOT/assets/gt-asound.conf" 'namehint.showall'
+
 echo "test-22-port-sleep OK"

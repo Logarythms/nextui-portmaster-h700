@@ -12,7 +12,7 @@ DIST="$ROOT/dist"
 . "$ROOT/pins.sh"
 
 fetch() { # $1=url $2=sha256 $3=out
-  curl -fsSL -o "$3.dl" "$1"
+  curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors -o "$3.dl" "$1"
   got=$(shasum -a 256 "$3.dl" | cut -d' ' -f1)
   [ "$got" = "$2" ] || { echo "SHA-256 mismatch for $1: got $got want $2" >&2; rm -f "$3.dl"; exit 1; }
   mv "$3.dl" "$3"
@@ -170,7 +170,9 @@ edit_portmaster_launch() { # $1=launch.sh path
   # shim, and the F53 bucket refinement. F53 also adds the use-stickless
   # hatch here (a userdata flag file -> GT_ANALOG_STICKS=0, applied by
   # edit_portmaster_device_info): a policy knob independent of both the
-  # measured input class and the profile tables.
+  # measured input class and the profile tables. F56: rg35xxpro is a
+  # two-stick SKU (rg35xx-h profile); a stickless exact-SKU profile on a
+  # sticks-class pad logs a WARNING.
   if ! grep -q 'gt-h700-device-pin' "$f"; then
     awk '{ print } $0 == "mkdir -p \"$XDG_DATA_HOME\"" {
       print ""
@@ -227,7 +229,8 @@ edit_portmaster_launch() { # $1=launch.sh path
       print "            rgsp)                 gt_pm_device=rg34xx-h;    GT_PANEL_W=720; GT_PANEL_H=480 ;;"
       print "            rg34xxsp)             gt_pm_device=rg34xx-sp;   GT_PANEL_W=720; GT_PANEL_H=480 ;;"
       print "            rg35xxh)              gt_pm_device=rg35xx-h;    GT_PANEL_W=640; GT_PANEL_H=480 ;;"
-      print "            rg35xxplus|rg35xxpro) gt_pm_device=rg35xx-plus; GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "            rg35xxplus)           gt_pm_device=rg35xx-plus; GT_PANEL_W=640; GT_PANEL_H=480 ;;"
+      print "            rg35xxpro)            gt_pm_device=rg35xx-h;    GT_PANEL_W=640; GT_PANEL_H=480 ;;  # F56: the Pro has two hall sticks (issue #1)"
       print "            rg35xxsp)             gt_pm_device=rg35xx-sp;   GT_PANEL_W=640; GT_PANEL_H=480 ;;"
       print "            rg40xxh)              gt_pm_device=rg40xx-h;    GT_PANEL_W=640; GT_PANEL_H=480 ;;"
       print "            rg40xxv)              gt_pm_device=rg40xx-v;    GT_PANEL_W=640; GT_PANEL_H=480 ;;"
@@ -249,6 +252,16 @@ edit_portmaster_launch() { # $1=launch.sh path
       print "        case \"$gt_pm_bucket\" in"
       print "            rg34xx|unknown) gt_pm_device=rg34xx-sp ;;"
       print "            rg35xx)         gt_pm_device=rg35xx-h ;;"
+      print "        esac"
+      print "    fi"
+      print "    # F56: an exact SKU is never refined, but a stickless profile on a pad that reports"
+      print "    # sticks is exactly how the RG35XX Pro mispin hid (issue #1) - leave a breadcrumb."
+      print "    # The CubeXX is pinned to rg34xx-h for its panel and legitimately has sticks: exempt."
+      print "    if [ \"$GT_INPUT_CLASS\" = sticks ]; then"
+      print "        case \"$gt_pm_device:$gt_tok\" in"
+      print "            *:rgcubexx|*:cube) ;;"
+      print "            rg34xx-h:*|rg35xx-plus:*|rg35xx-sp:*|rg28xx:*)"
+      print "                echo \"gt-h700: WARNING: profile $gt_pm_device has no analog sticks but this pad reports sticks - please open an issue naming your device\" ;;"
       print "        esac"
       print "    fi"
       print "    # F53: use-stickless hatch -> ports see ANALOG_STICKS=0 (device_info honors GT_ANALOG_STICKS);"
@@ -699,6 +712,134 @@ edit_portmaster_launch() { # $1=launch.sh path
       print "    fi"
       print ""
       print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-gl4es-egl: F60 — NextUI's SDL fork (mali-fbdev backend) calls
+  # egl_data->eglCreateSyncKHR / eglDestroySyncKHR UNGUARDED in its SwapWindow
+  # (SDL_maliopengles.c:64/73), resolved via eglGetProcAddress on whatever
+  # SDL_VIDEO_EGL_DRIVER names. gl4es ports point SDL at gl4es's fake EGL stub
+  # (libgl_default.txt -> LIBGL_FB=2 -> the launcher exports
+  # SDL_VIDEO_EGL_DRIVER="$GAMEDIR/gl4es.aarch64/libEGL.so.1"); a stub older
+  # than gl4es's eglDestroySyncKHR (Quakespasm: 26,568 B, eglGetProcAddress
+  # returns NULL for unknown names) makes the swap call address 0 -> SIGSEGV
+  # on the first frame (gdb on the RG SP, 2026-09-04). Newer stubs (Jedi
+  # Outcast) export it plus a catch-all eglStub and run. Bypassing the fake EGL
+  # is NOT a fix: with the real Mali EGL these ports fail CreateWindow and hit a
+  # second unguarded pointer in the fork's cleanup (SDL_malivideo.c:396). So:
+  # swap in the pak-hosted newer stub (assets/gl4es-libEGL.so.1, pinned
+  # ptitSeb/gl4es build, staged at lib/gl4es-egl/) for any 64-bit gl4es dir
+  # whose stub lacks the symbol; the port keeps its own libGL.so.1 (the mix is
+  # device-proven). Original kept beside it as .gt-orig. Idempotent: the
+  # substituted file carries the symbol. Only gl4es.aarch64/ and gl4es/ are
+  # touched — never a 32-bit gl4es.armhf/ (F45-class ports). Anchored on the
+  # nintendo_file line (after GAMEDIR resolves, before the port runs) like F27.
+  # Upstream bugs, not yet reported: NextUI (guard the pointers), PortMaster (refresh gl4es).
+  if ! grep -q 'gt-h700-gl4es-egl' "$f"; then
+    awk '$0 == "    nintendo_file=$(find \"$USERDATA_PATH/PORTS-portmaster\" -maxdepth 1 -iname \"nintendo*\" -type f)" {
+      print "    # gt-h700-gl4es-egl (F60): NextUI SDL swaps call eglDestroySyncKHR unguarded;"
+      print "    # a port-bundled gl4es fake EGL that predates it crashes on frame one -> swap in the pak stub"
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && [ -f \"$PAK_DIR/lib/gl4es-egl/libEGL.so.1\" ]; then"
+      print "        for gt_egl in \"$GAMEDIR\"/gl4es.aarch64/libEGL.so.1 \"$GAMEDIR\"/gl4es/libEGL.so.1; do"
+      print "            [ -f \"$gt_egl\" ] || continue"
+      print "            if ! grep -q eglDestroySyncKHR \"$gt_egl\" 2>/dev/null; then"
+      print "                echo \"gl4es fake EGL $gt_egl lacks eglDestroySyncKHR; substituting the pak stub (F60)\""
+      print "                [ -f \"$gt_egl.gt-orig\" ] || cp -fp \"$gt_egl\" \"$gt_egl.gt-orig\""
+      print "                cp -f \"$PAK_DIR/lib/gl4es-egl/libEGL.so.1\" \"$gt_egl\""
+      print "            fi"
+      print "        done"
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-port-libs-path: F60 (companion) — PortMaster-New's Quakespasm
+  # launcher (0.97.0, 2026-08-25) dropped the LD_LIBRARY_PATH line every earlier
+  # version had, so its bundled libs.aarch64/ (libmad, libmikmod) is never
+  # searched and a fresh install dies at load on any lib-poor CFW (LD_TRACE on
+  # the RG SP 2026-09-04; upstream regression, not yet reported). Generic
+  # guard: when a launcher sets NO LD_LIBRARY_PATH at all, prepend the port's
+  # own lib dirs that exist. Launchers that do set it are untouched (upstream's
+  # inject_trimui_lib_path handles those). Exported from run_port, so the port
+  # script and everything it spawns inherit it. Same anchor as gt-h700-gl4es-egl.
+  if ! grep -q 'gt-h700-port-libs-path' "$f"; then
+    awk '$0 == "    nintendo_file=$(find \"$USERDATA_PATH/PORTS-portmaster\" -maxdepth 1 -iname \"nintendo*\" -type f)" {
+      print "    # gt-h700-port-libs-path (F60): a launcher with no LD_LIBRARY_PATH= line loses its bundled libs here"
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && ! grep -q \"LD_LIBRARY_PATH=\" \"$ROM_PATH\"; then"
+      print "        gt_port_libs="
+      print "        for gt_libdir in \"$GAMEDIR/libs.aarch64\" \"$GAMEDIR/libs\"; do"
+      print "            [ -d \"$gt_libdir\" ] && gt_port_libs=\"${gt_port_libs:+$gt_port_libs:}$gt_libdir\""
+      print "        done"
+      print "        if [ -n \"$gt_port_libs\" ]; then"
+      print "            echo \"Launcher sets no LD_LIBRARY_PATH; adding $gt_port_libs (F60)\""
+      print "            export LD_LIBRARY_PATH=\"$gt_port_libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\""
+      print "        fi"
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-gconv: F64 — NextUI-h700 ships no glibc gconv modules, so iconv
+  # fails for anything outside glibc's builtins; Luanti converts every UI string
+  # UTF-8 -> UTF-32LE and every label read "<invalid UTF-8 string>" (v0.5.0
+  # device gate, rc10). Point GCONV_PATH at the pak's UTF-16/UTF-32 modules
+  # (lib/gconv/, from the Ubuntu glibc build byte-identical to the device's).
+  # Guarded: h700 only; the port has not set GCONV_PATH itself; the pak config
+  # is staged; the firmware still has no gconv of its own; and the system libc
+  # is still that exact build (a gconv module must match the glibc it loads
+  # into — a firmware glibc update falls back to today's behaviour).
+  # GT_LIBC_PATH / GT_SYS_GCONV are test hooks only. Same anchor as F60.
+  if ! grep -q 'gt-h700-gconv' "$f"; then
+    awk '$0 == "    nintendo_file=$(find \"$USERDATA_PATH/PORTS-portmaster\" -maxdepth 1 -iname \"nintendo*\" -type f)" {
+      print "    # gt-h700-gconv (F64): NextUI ships no glibc gconv modules; iconv to UTF-16/UTF-32 failed in every port (Luanti text)"
+      print "    gt_libc=\"${GT_LIBC_PATH:-/lib/aarch64-linux-gnu/libc.so.6}\""
+      print "    if [ \"$PLATFORM\" = \"h700\" ] && [ -z \"${GCONV_PATH:-}\" ] && [ -f \"$PAK_DIR/lib/gconv/gconv-modules\" ] && [ ! -e \"${GT_SYS_GCONV:-/usr/lib/aarch64-linux-gnu/gconv/gconv-modules}\" ] && grep -q -F \"GLIBC 2.35-0ubuntu3)\" \"$gt_libc\" 2>/dev/null; then"
+      print "        export GCONV_PATH=\"$PAK_DIR/lib/gconv\""
+      print "        echo \"gt-h700: GCONV_PATH -> pak UTF-16/UTF-32 conversion modules (F64)\""
+      print "    fi"
+      print ""
+      print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-gamedir-fallback: F61 — run_port evals the launcher's GAMEDIR= line
+  # and refuses to run when there is none ("No GAMEDIR found ... not executing
+  # game", a hard exit 1 with a dialog). Fallout 1's launcher declares PORTDIR=
+  # only (issue #1). Take PORTDIR= as the game dir when GAMEDIR is empty, but
+  # only when it resolves to strictly below run_port's own ports root
+  # ("/$directory/ports/<name>", e.g. Fallout 1's .../ports/fallout1) — a bare
+  # ports root never counts, so upstream's own refusal still fires for a
+  # launcher that mistakenly points PORTDIR= at the root itself.
+  # run_port's own $PORTDIR ("/$directory/ports") is saved and restored around
+  # the eval; the eval sees $directory because run_port set it just above.
+  # Anchor: the upstream resolution line (exact, unique); the block runs
+  # before upstream's "Game dir is:" echo so the log shows the resolved dir.
+  if ! grep -q 'gt-h700-gamedir-fallback' "$f"; then
+    awk '$0 == "    GAMEDIR=\"${GAMEDIR:-$gamedir}\"" {
+      print $0
+      print "    # gt-h700-gamedir-fallback (F61): launchers that declare PORTDIR= and never GAMEDIR= (Fallout 1)"
+      print "    # were refused below (\"No GAMEDIR found\"); take PORTDIR= as the game dir instead"
+      print "    if [ -z \"$GAMEDIR\" ]; then"
+      print "        gt_portdir_line=$(grep -iE \"^[[:space:]]*(export[[:space:]]+)?PORTDIR=\" \"$ROM_PATH\" | head -1)"
+      print "        if [ -n \"$gt_portdir_line\" ]; then"
+      print "            gt_saved_portdir=$PORTDIR; PORTDIR=; portdir="
+      print "            eval \"$gt_portdir_line\""
+      print "            GAMEDIR=\"${PORTDIR:-$portdir}\""
+      print "            PORTDIR=$gt_saved_portdir"
+      print "            case \"$GAMEDIR\" in \"$gt_saved_portdir\"/?*) ;; *) GAMEDIR= ;; esac"
+      print "            [ -n \"$GAMEDIR\" ] && echo \"No GAMEDIR= in $ROM_NAME; using PORTDIR= as the game dir: $GAMEDIR (F61)\""
+      print "        fi"
+      print "    fi"
       next
     }
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
@@ -1203,16 +1344,36 @@ edit_portmaster_launch() { # $1=launch.sh path
   fi
 
   # gt-h700-preload-snapshot: F54 — freeze the complete pak preload chain for
-  # the launcher lines gt-preload-append.sh rewrites. Inserted LAST in this
-  # function on purpose: every preload-composing hook above prints its block
-  # before the launcher exec line, so this one lands immediately before the
-  # exec and sees the final chain. Keep it last when adding hooks.
+  # the launcher lines gt-preload-append.sh rewrites. Inserted after every
+  # preload-composing hook on purpose: each prints its block before the
+  # launcher exec line, so this one lands immediately before the exec and
+  # sees the final chain. Keep it after new preload hooks; only F59's
+  # gt-h700-port-stdin (which rewrites the exec line itself) may follow it.
   if ! grep -q 'gt-h700-preload-snapshot' "$f"; then
     awk '$0 == "    \"$PAK_DIR/bin/bash\" \"$ROM_PATH\"" {
       print "    # gt-h700-preload-snapshot (F54): the pak chain, frozen for the preload-append helper"
       print "    export GT_LD_PRELOAD=\"${LD_PRELOAD:-}\""
       print ""
       print $0
+      next
+    }
+    { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-port-stdin: F59 — NextUI starts paks with the console (ttyS0) as
+  # stdin and run_port handed it to the port unchanged; every other CFW gives
+  # ports /dev/null. ECWolf (Wolfenstein 3D) then blocked in its console IWAD
+  # picker's scanf() forever — the "black screen" in issue #1 (gdb on the RG SP
+  # 2026-09-04; its launcher's --data never matches because ECWolf compares the
+  # extension case-sensitively against an uppercase VSWAP.WL1 — an upstream
+  # launcher bug, not yet reported). With /dev/null the scanf fails and the
+  # picker returns the last set silently, as elsewhere. Generic for any port
+  # that prompts on stdin.
+  # MUST STAY THE LAST EDIT IN THIS FUNCTION: F25/F30/F37/F42/F47/F54 all anchor
+  # on the pristine exec line; this rewrites it (idempotent via the marker).
+  if ! grep -q 'gt-h700-port-stdin' "$f"; then
+    awk '$0 == "    \"$PAK_DIR/bin/bash\" \"$ROM_PATH\"" {
+      print "    \"$PAK_DIR/bin/bash\" \"$ROM_PATH\" </dev/null  # gt-h700-port-stdin (F59): NextUI hands paks the console as stdin; other CFWs give ports /dev/null - a port prompting on stdin (ECWolf IWAD picker) must get EOF, not hang"
       next
     }
     { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
@@ -1255,6 +1416,44 @@ edit_portmaster_device_info() { # $1=PortMaster/device_info.txt path
     awk '{ print } $0 == "export ANALOG_STICKS" {
       print "export ANALOGSTICKS=\"$ANALOG_STICKS\"  # gt-h700-analogsticks: alias for launchers without the underscore (OpenTTD)"
     }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-no-armhf: F62 — NextUI-h700 ships /lib/ld-linux-armhf.so.3, so
+  # upstream's probe says DEVICE_HAS_ARMHF="Y", but no 32-bit libc set stands
+  # behind it: /usr/lib/arm-linux-gnueabihf/ holds exactly one file, libc.so.6
+  # (device-checked 2026-09-04). Found in the final review: harbourmaster
+  # decides armhf capability itself, from the loader alone (cpu_info_v2() in
+  # its own pylibs/harbourmaster/hardware.py), and reads neither this variable
+  # nor device_info.txt in general — so it still offers armhf-only ports
+  # (Serious Sam TFE, PORT_32BIT="Y") on this firmware, and they still die at
+  # load on the 64-bit libdl ("wrong ELF class", issue #1). This edit only
+  # fixes the variable ports see and the device_info.txt dump: require a
+  # 32-bit libdl next to the loader before claiming Y; a CFW with a real
+  # armhf userland keeps Y.
+  # F45's pak-hosted armhf runtime (Animal Crossing) is unaffected — that port
+  # is not installed through harbourmaster and uses the pak's own launcher.
+  # GT_ARMHF_LIBDL is a test hook only. Anchor: the export line (upstream,
+  # unique — the later heredoc line reads DEVICE_HAS_ARMHF="${...}").
+  if ! grep -q 'gt-h700-no-armhf' "$f"; then
+    awk '$0 == "export DEVICE_HAS_ARMHF" {
+      print "# gt-h700-no-armhf (F62): the armhf loader alone is not a 32-bit userland - require a 32-bit libdl too"
+      print "gt_armhf_libdl=\"${GT_ARMHF_LIBDL:-/usr/lib/arm-linux-gnueabihf/libdl.so.2}\""
+      print "if [ \"$DEVICE_HAS_ARMHF\" = \"Y\" ] && [ ! -e \"$gt_armhf_libdl\" ] && [ ! -e /lib/arm-linux-gnueabihf/libdl.so.2 ]; then"
+      print "    DEVICE_HAS_ARMHF=\"N\""
+      print "fi"
+    } { print }' "$f" > "$f.awk.tmp" && mv "$f.awk.tmp" "$f"
+  fi
+
+  # gt-h700-lscpu: F62 — BaseOS has no lscpu, so every port log carried
+  # "lscpu: command not found" (device_info.txt's DEVICE_CPU probe). Silence
+  # the probe; DEVICE_CPU stays empty as before (it is informational only).
+  # BRE only (BSD sed on macOS + GNU sed in CI): a literal "|" is plain "|",
+  # "$(" is literal because "$" is an anchor only at the pattern's end.
+  if ! grep -q 'gt-h700-lscpu' "$f"; then
+    sed -i.bak \
+      's#^DEVICE_CPU=$(lscpu | \(.*\)$#DEVICE_CPU=$(lscpu 2>/dev/null | \1  \# gt-h700-lscpu (F62): BaseOS has no lscpu#' \
+      "$f"
+    rm -f "$f.bak"
   fi
 }
 
@@ -1557,6 +1756,68 @@ do_portmaster() {
   gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libvorbisenc.so.2.0.12" "$PM_VORBISENC_SO_SHA256"
   gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libopus.so.0.8.0" "$PM_OPUS_SO_SHA256"
 
+  # gt-h700-libgomp-gthread-gmp: F58 — issue #1 lib gaps for the current Doom
+  # Engines (libgomp.so.1 for Crispy/GZDoom, libgthread-2.0.so.0 for Crispy's
+  # bundled fluidsynth) and Luanti (libgmp.so.10) builds; closures traced on the
+  # RG SP 2026-09-04. Same fail-closed extract + F10 mandatory extracted-hash
+  # check. Only the three sonames ship — libglib-2.0 is already on the system
+  # image, so the rest of libglib2.0-0 stays out. All three members verified via
+  # `tar -tJ` under ./usr/lib/aarch64-linux-gnu/.
+  fetch "$PM_GOMP_DEB_URL" "$PM_GOMP_DEB_SHA256" "$tmp/gomp.deb"
+  fetch "$PM_GLIB_DEB_URL" "$PM_GLIB_DEB_SHA256" "$tmp/glib.deb"
+  fetch "$PM_GMP_DEB_URL" "$PM_GMP_DEB_SHA256" "$tmp/gmp.deb"
+  ar p "$tmp/gomp.deb" data.tar.xz | tar -xJ -C "$tmp" ./usr/lib/aarch64-linux-gnu/libgomp.so.1.0.0
+  ar p "$tmp/glib.deb" data.tar.xz | tar -xJ -C "$tmp" ./usr/lib/aarch64-linux-gnu/libgthread-2.0.so.0.6600.8
+  ar p "$tmp/gmp.deb" data.tar.xz | tar -xJ -C "$tmp" ./usr/lib/aarch64-linux-gnu/libgmp.so.10.4.1
+  for gt_f58_f in libgomp.so.1.0.0 libgthread-2.0.so.0.6600.8 libgmp.so.10.4.1; do
+    file "$tmp/usr/lib/aarch64-linux-gnu/$gt_f58_f" | grep -q 'shared object.*aarch64' \
+      || { echo "extracted $gt_f58_f is not an aarch64 shared object" >&2; exit 1; }
+  done
+  gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libgomp.so.1.0.0" "$PM_GOMP_SO_SHA256"
+  gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libgthread-2.0.so.0.6600.8" "$PM_GTHREAD_SO_SHA256"
+  gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libgmp.so.10.4.1" "$PM_GMP_SO_SHA256"
+
+  # gt-h700-x11-cairo-libs: F63 — found in the v0.5.0 device gate (RG SP,
+  # NextUI rc10): Doom Engines' front-end menu is a LÖVE app whose bundled
+  # libs/lovelibs/libcairo.so.2 is built with cairo's X backends, and the pak
+  # doesn't ship them. Same fail-closed extract + F10 mandatory extracted-hash
+  # check. Only these four sonames ship; libxcb.so.1/libX11.so.6/libXau.so.6/
+  # libXdmcp.so.6 are already in the pak's lib/ (upstream).
+  fetch "$PM_XCBSHM_DEB_URL" "$PM_XCBSHM_DEB_SHA256" "$tmp/xcbshm.deb"
+  fetch "$PM_XCBRENDER_DEB_URL" "$PM_XCBRENDER_DEB_SHA256" "$tmp/xcbrender.deb"
+  fetch "$PM_XRENDER_DEB_URL" "$PM_XRENDER_DEB_SHA256" "$tmp/xrender.deb"
+  fetch "$PM_XEXT_DEB_URL" "$PM_XEXT_DEB_SHA256" "$tmp/xext.deb"
+  ar p "$tmp/xcbshm.deb" data.tar.xz | tar -xJ -C "$tmp" ./usr/lib/aarch64-linux-gnu/libxcb-shm.so.0.0.0
+  ar p "$tmp/xcbrender.deb" data.tar.xz | tar -xJ -C "$tmp" ./usr/lib/aarch64-linux-gnu/libxcb-render.so.0.0.0
+  ar p "$tmp/xrender.deb" data.tar.xz | tar -xJ -C "$tmp" ./usr/lib/aarch64-linux-gnu/libXrender.so.1.3.0
+  ar p "$tmp/xext.deb" data.tar.xz | tar -xJ -C "$tmp" ./usr/lib/aarch64-linux-gnu/libXext.so.6.4.0
+  for gt_f63_f in libxcb-shm.so.0.0.0 libxcb-render.so.0.0.0 libXrender.so.1.3.0 libXext.so.6.4.0; do
+    file "$tmp/usr/lib/aarch64-linux-gnu/$gt_f63_f" | grep -q 'shared object.*aarch64' \
+      || { echo "extracted $gt_f63_f is not an aarch64 shared object" >&2; exit 1; }
+  done
+  gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libxcb-shm.so.0.0.0" "$PM_XCBSHM_SO_SHA256"
+  gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libxcb-render.so.0.0.0" "$PM_XCBRENDER_SO_SHA256"
+  gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libXrender.so.1.3.0" "$PM_XRENDER_SO_SHA256"
+  gt_check_extracted_hash "$tmp/usr/lib/aarch64-linux-gnu/libXext.so.6.4.0" "$PM_XEXT_SO_SHA256"
+
+  # gt-h700-gconv: F64 — glibc's UTF-16/UTF-32 gconv modules, from the Ubuntu
+  # jammy libc6 build whose libc.so.6 is byte-identical to NextUI-h700's
+  # (device-checked 2026-09-28), so they load into the device glibc. The .deb
+  # is zstd-compressed (Ubuntu), unlike the bullseye debs: unpack with an
+  # explicit zstd -dc so GNU tar (CI release build) and bsdtar (macOS) agree.
+  fetch "$PM_LIBC6_JAMMY_DEB_URL" "$PM_LIBC6_JAMMY_DEB_SHA256" "$tmp/libc6-jammy.deb"
+  command -v zstd >/dev/null 2>&1 \
+    || { echo "zstd is required to unpack the Ubuntu libc6 .deb (F64 gconv modules)" >&2; exit 1; }
+  mkdir -p "$tmp/libc6-jammy"
+  ar p "$tmp/libc6-jammy.deb" data.tar.zst | zstd -dc | tar -x -C "$tmp/libc6-jammy" \
+    ./usr/lib/aarch64-linux-gnu/gconv/UTF-16.so ./usr/lib/aarch64-linux-gnu/gconv/UTF-32.so
+  for gt_f64_f in UTF-16.so UTF-32.so; do
+    file "$tmp/libc6-jammy/usr/lib/aarch64-linux-gnu/gconv/$gt_f64_f" | grep -q 'shared object.*aarch64' \
+      || { echo "extracted gconv $gt_f64_f is not an aarch64 shared object" >&2; exit 1; }
+  done
+  gt_check_extracted_hash "$tmp/libc6-jammy/usr/lib/aarch64-linux-gnu/gconv/UTF-16.so" "$PM_GCONV_UTF16_SO_SHA256"
+  gt_check_extracted_hash "$tmp/libc6-jammy/usr/lib/aarch64-linux-gnu/gconv/UTF-32.so" "$PM_GCONV_UTF32_SO_SHA256"
+
   assembled="$tmp/PORTS.pak"
   mkdir -p "$assembled"
   unzip -q "$tmp/ports-pak.zip" -d "$assembled"
@@ -1671,6 +1932,20 @@ PMEOF
   cp "$ASSETS/gt-sleep-blocklist.txt" "$assembled/files/gt-sleep-blocklist.txt"
   cp "$ASSETS/gt-asound.conf" "$assembled/files/gt-asound.conf"
 
+  # gt-h700-gl4es-egl: F60 — pak-hosted newer gl4es fake EGL stub, swapped into
+  # gl4es ports whose bundled stub lacks eglDestroySyncKHR (NextUI's SDL swap
+  # calls it unguarded; see edit_portmaster_launch). MUST live in a SUBDIRECTORY:
+  # lib/ itself is on every port's LD_LIBRARY_PATH, and upstream's own
+  # files/lib.tar.gz already carries a top-level libEGL.so.1 (an older gl4es
+  # fake EGL) that launch.sh unpacks into the pak's lib/ on the first boot
+  # after an install or unzip-over — a top-level stub here would collide with
+  # that unpack. Fail closed on arch (F45 lesson). Built by `make gl4es-egl`;
+  # provenance in assets/gl4es-libEGL.txt.
+  mkdir -p "$assembled/lib/gl4es-egl"
+  cp "$ASSETS/gl4es-libEGL.so.1" "$assembled/lib/gl4es-egl/libEGL.so.1"
+  file "$assembled/lib/gl4es-egl/libEGL.so.1" | grep -q 'ELF 64-bit.*aarch64' \
+    || { echo "gl4es-libEGL.so.1 is not an aarch64 shared object" >&2; exit 1; }
+
   # gt-h700-nxengine-settings: F39 — h700-correct nxengine-evo (Cave Story Evo)
   # controls + resolution. nxengine-evo reads the raw SDL joystick and binds
   # actions to button INDICES (and a resolution INDEX) in settings.dat; the
@@ -1744,6 +2019,27 @@ PMEOF
   cp "$tmp/usr/lib/aarch64-linux-gnu/libsndfile.so.1.0.31" "$assembled/lib/libsndfile.so.1"
   cp "$tmp/usr/lib/aarch64-linux-gnu/libvorbisenc.so.2.0.12" "$assembled/lib/libvorbisenc.so.2"
   cp "$tmp/usr/lib/aarch64-linux-gnu/libopus.so.0.8.0" "$assembled/lib/libopus.so.0"
+
+  # gt-h700-libgomp-gthread-gmp: F58 — SONAME-named real files (same
+  # vfat-no-symlinks rule). Pak lib/ is last on every port's LD_LIBRARY_PATH,
+  # so a port that bundles its own copy still wins.
+  cp "$tmp/usr/lib/aarch64-linux-gnu/libgomp.so.1.0.0" "$assembled/lib/libgomp.so.1"
+  cp "$tmp/usr/lib/aarch64-linux-gnu/libgthread-2.0.so.0.6600.8" "$assembled/lib/libgthread-2.0.so.0"
+  cp "$tmp/usr/lib/aarch64-linux-gnu/libgmp.so.10.4.1" "$assembled/lib/libgmp.so.10"
+
+  # gt-h700-x11-cairo-libs: F63 — SONAME-named real files (vfat-no-symlinks rule).
+  cp "$tmp/usr/lib/aarch64-linux-gnu/libxcb-shm.so.0.0.0" "$assembled/lib/libxcb-shm.so.0"
+  cp "$tmp/usr/lib/aarch64-linux-gnu/libxcb-render.so.0.0.0" "$assembled/lib/libxcb-render.so.0"
+  cp "$tmp/usr/lib/aarch64-linux-gnu/libXrender.so.1.3.0" "$assembled/lib/libXrender.so.1"
+  cp "$tmp/usr/lib/aarch64-linux-gnu/libXext.so.6.4.0" "$assembled/lib/libXext.so.6"
+
+  # gt-h700-gconv: F64 — the two modules plus a trimmed gconv-modules listing
+  # only them (assets/gt-gconv-modules); run_port points GCONV_PATH here. A
+  # SUBDIRECTORY of lib/ on purpose: these are dlopen'ed plugins, not libraries.
+  mkdir -p "$assembled/lib/gconv"
+  cp "$tmp/libc6-jammy/usr/lib/aarch64-linux-gnu/gconv/UTF-16.so" "$assembled/lib/gconv/UTF-16.so"
+  cp "$tmp/libc6-jammy/usr/lib/aarch64-linux-gnu/gconv/UTF-32.so" "$assembled/lib/gconv/UTF-32.so"
+  cp "$ASSETS/gt-gconv-modules" "$assembled/lib/gconv/gconv-modules"
 
   # gt-h700-7zzs: F18 — modern port patchscripts (deltarune, the RHH
   # GameMaker ports) invoke "$controlfolder/7zzs.$DEVICE_ARCH" for archive

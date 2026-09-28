@@ -19,7 +19,7 @@ PM_PAK_SHA256=969ca07385b40b72c230143e474fb393ce28c1d550ce311db8c97580aa020252  
 # BaseOS ships only ABI-incompatible libffi.so.8). Ship libffi7 3.3-6 (the exact
 # bullseye version the bundled python targets); sha is the .deb's own sha256,
 # double-download cross-checked (upstream publishes none for pool files).
-PM_LIBFFI_DEB_URL="http://deb.debian.org/debian/pool/main/libf/libffi/libffi7_3.3-6_arm64.deb"
+PM_LIBFFI_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libf/libffi/libffi7_3.3-6_arm64.deb"
 PM_LIBFFI_DEB_SHA256=eb748e33ae4ed46f5a4c14b7a2a09792569f2029ede319d0979c373829ba1532
 # gate finding F3 (2026-08-22): NextUI's system lib dir has no SDL2_mixer and a
 # too-old SDL2_ttf (2.0.13 < pysdl2's 2.0.14 minimum); pysdl2's vendored dll.py
@@ -31,13 +31,13 @@ PM_LIBFFI_DEB_SHA256=eb748e33ae4ed46f5a4c14b7a2a09792569f2029ede319d0979c373829b
 # All four .deb shas are the .deb's own sha256, double-download cross-checked
 # (upstream publishes a sha256 for these in Packages.xz; independently
 # reproduced, not just copied).
-PM_SDL2TTF_DEB_URL="http://deb.debian.org/debian/pool/main/libs/libsdl2-ttf/libsdl2-ttf-2.0-0_2.0.15+dfsg1-1_arm64.deb"
+PM_SDL2TTF_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libs/libsdl2-ttf/libsdl2-ttf-2.0-0_2.0.15+dfsg1-1_arm64.deb"
 PM_SDL2TTF_DEB_SHA256=8919e0490fa6383425e98f43b0922f664bc69deb5caaaab647c137be2da7b252
-PM_FREETYPE_DEB_URL="http://deb.debian.org/debian-security/pool/updates/main/f/freetype/libfreetype6_2.10.4+dfsg-1+deb11u2_arm64.deb"
+PM_FREETYPE_DEB_URL="http://snapshot.debian.org/archive/debian-security/20260801T000000Z/pool/updates/main/f/freetype/libfreetype6_2.10.4+dfsg-1+deb11u2_arm64.deb"
 PM_FREETYPE_DEB_SHA256=0e8e39f26802a8e7695c058ac4fe704fbcc0b4e2c911bfdf2b53c31939e8c029
-PM_PNG16_DEB_URL="http://deb.debian.org/debian-security/pool/updates/main/libp/libpng1.6/libpng16-16_1.6.37-3+deb11u4_arm64.deb"
+PM_PNG16_DEB_URL="http://snapshot.debian.org/archive/debian-security/20260801T000000Z/pool/updates/main/libp/libpng1.6/libpng16-16_1.6.37-3+deb11u4_arm64.deb"
 PM_PNG16_DEB_SHA256=c2d7462269c4ffcb97253ad9ab503b90a9614c187a9807a4d47b7d62a366ff0f
-PM_BROTLI_DEB_URL="http://deb.debian.org/debian/pool/main/b/brotli/libbrotli1_1.0.9-2+b2_arm64.deb"
+PM_BROTLI_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/b/brotli/libbrotli1_1.0.9-2+b2_arm64.deb"
 PM_BROTLI_DEB_SHA256=52ca7f90de6cb6576a0a5cf5712fc4ae7344b79c44b8a1548087fd5d92bf1f64
 # gate finding F5 (2026-08-22), same "h700 lib gap" story as F3 above: NextUI's
 # libSDL2_image is built without JPEG support, and the GUI theme loads a .jpg —
@@ -48,17 +48,17 @@ PM_BROTLI_DEB_SHA256=52ca7f90de6cb6576a0a5cf5712fc4ae7344b79c44b8a1548087fd5d92b
 # (tiff needed it this round, same as freetype/png16 did for F3). All six
 # .deb shas are the .deb's own sha256, double-download cross-checked and
 # cross-referenced against Packages.xz.
-PM_SDL2IMAGE_DEB_URL="http://deb.debian.org/debian/pool/main/libs/libsdl2-image/libsdl2-image-2.0-0_2.0.5+dfsg1-2_arm64.deb"
+PM_SDL2IMAGE_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libs/libsdl2-image/libsdl2-image-2.0-0_2.0.5+dfsg1-2_arm64.deb"
 PM_SDL2IMAGE_DEB_SHA256=299a8d7568bf930f7171a849265d6b1bd0c7491c231c142ddfe4e29c2dded571
-PM_JPEG_DEB_URL="http://deb.debian.org/debian/pool/main/libj/libjpeg-turbo/libjpeg62-turbo_2.0.6-4_arm64.deb"
+PM_JPEG_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libj/libjpeg-turbo/libjpeg62-turbo_2.0.6-4_arm64.deb"
 PM_JPEG_DEB_SHA256=8903394de23dc6ead5abfc80972c8fd44300c9903ad4589d0df926e71977d881
-PM_TIFF_DEB_URL="http://deb.debian.org/debian-security/pool/updates/main/t/tiff/libtiff5_4.2.0-1+deb11u8_arm64.deb"
+PM_TIFF_DEB_URL="http://snapshot.debian.org/archive/debian-security/20260801T000000Z/pool/updates/main/t/tiff/libtiff5_4.2.0-1+deb11u8_arm64.deb"
 PM_TIFF_DEB_SHA256=5bbf4670b8a7285abe014afe94ff2ea2e73ea4447f0cc050721f6237c549b7ee
-PM_WEBP_DEB_URL="http://deb.debian.org/debian/pool/main/libw/libwebp/libwebp6_0.6.1-2.1+deb11u2_arm64.deb"
+PM_WEBP_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libw/libwebp/libwebp6_0.6.1-2.1+deb11u2_arm64.deb"
 PM_WEBP_DEB_SHA256=edeb260e528fecae77457a63a468e55837a98079fdd7f1e20e9813c358f8c755
-PM_JBIG_DEB_URL="http://deb.debian.org/debian/pool/main/j/jbigkit/libjbig0_2.1-3.1+b2_arm64.deb"
+PM_JBIG_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/j/jbigkit/libjbig0_2.1-3.1+b2_arm64.deb"
 PM_JBIG_DEB_SHA256=b71b3e62e162f64cb24466bf7c6e40b05ce2a67ca7fed26d267d498f2896d549
-PM_DEFLATE_DEB_URL="http://deb.debian.org/debian/pool/main/libd/libdeflate/libdeflate0_1.7-1_arm64.deb"
+PM_DEFLATE_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libd/libdeflate/libdeflate0_1.7-1_arm64.deb"
 PM_DEFLATE_DEB_SHA256=a1adc22600ea5e44e8ea715972ac2af7994cc7ff4d94bba8e8b01abb9ddbdfd0
 # gate finding F7 (2026-08-22), same "h700 lib gap" story: port launches run
 # through the pak's bundled DYNAMIC bash (5.2.0), which needs libncurses.so.5;
@@ -68,9 +68,9 @@ PM_DEFLATE_DEB_SHA256=a1adc22600ea5e44e8ea715972ac2af7994cc7ff4d94bba8e8b01abb9d
 # .deb shas are the .deb's own sha256, double-download cross-checked and
 # matched against Packages.xz on the first try (no debian-security fallback
 # needed this round).
-PM_NCURSES5_DEB_URL="http://deb.debian.org/debian/pool/main/n/ncurses/libncurses5_6.2+20201114-2+deb11u2_arm64.deb"
+PM_NCURSES5_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/n/ncurses/libncurses5_6.2+20201114-2+deb11u2_arm64.deb"
 PM_NCURSES5_DEB_SHA256=cebc7c767c8892bb49b82ff70b3ec3d13ffe3dc79ed0188c98b542fa5ea378c9
-PM_TINFO5_DEB_URL="http://deb.debian.org/debian/pool/main/n/ncurses/libtinfo5_6.2+20201114-2+deb11u2_arm64.deb"
+PM_TINFO5_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/n/ncurses/libtinfo5_6.2+20201114-2+deb11u2_arm64.deb"
 PM_TINFO5_DEB_SHA256=98a4b48202fa7f3f3191b5dc08bcee436b10ff7d01f9710a06309172b35677fb
 # gate finding F9 (2026-08-22), same "h700 lib gap" story: OpenAL audio chain
 # for GL/gl4es ports; TrimUI provides it, h700 doesn't (full missing chain
@@ -79,13 +79,13 @@ PM_TINFO5_DEB_SHA256=98a4b48202fa7f3f3191b5dc08bcee436b10ff7d01f9710a06309172b35
 # .deb shas are the .deb's own sha256, double-download cross-checked and
 # matched against Packages.xz on the first try (no debian-security fallback
 # needed this round).
-PM_OPENAL_DEB_URL="http://deb.debian.org/debian/pool/main/o/openal-soft/libopenal1_1.19.1-2_arm64.deb"
+PM_OPENAL_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/o/openal-soft/libopenal1_1.19.1-2_arm64.deb"
 PM_OPENAL_DEB_SHA256=848f7cb93823c780ab58c0da67535316ef797666934d06ed6d64e902d4e2df11
-PM_SNDIO_DEB_URL="http://deb.debian.org/debian/pool/main/s/sndio/libsndio7.0_1.5.0-3_arm64.deb"
+PM_SNDIO_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/s/sndio/libsndio7.0_1.5.0-3_arm64.deb"
 PM_SNDIO_DEB_SHA256=5d3fcdcde0de0021ee217769e0866dcd524734a04f961c2ecc33488db47ba545
-PM_LIBBSD_DEB_URL="http://deb.debian.org/debian/pool/main/libb/libbsd/libbsd0_0.11.3-1+deb11u1_arm64.deb"
+PM_LIBBSD_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libb/libbsd/libbsd0_0.11.3-1+deb11u1_arm64.deb"
 PM_LIBBSD_DEB_SHA256=614d36d41b670955a75526865bd321703f2accb6e0c07ee4c283fbba12e494df
-PM_LIBMD_DEB_URL="http://deb.debian.org/debian/pool/main/libm/libmd/libmd0_1.0.3-3_arm64.deb"
+PM_LIBMD_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libm/libmd/libmd0_1.0.3-3_arm64.deb"
 PM_LIBMD_DEB_SHA256=3c490cdcce9d25e702e6587b6166cd8e7303fce8343642d9d5d99695282a9e5c
 # fix F20 (2026-08-23), same "h700 lib gap" story: libogg is the container
 # layer under the whole vorbis stack, and Solarus-engine ports (Tunics!) link
@@ -96,7 +96,7 @@ PM_LIBMD_DEB_SHA256=3c490cdcce9d25e702e6587b6166cd8e7303fce8343642d9d5d99695282a
 # .deb sha is the .deb's own sha256, double-download cross-checked and
 # matched against Packages.xz on the first try (no debian-security fallback
 # needed this round).
-PM_OGG_DEB_URL="http://deb.debian.org/debian/pool/main/libo/libogg/libogg0_1.3.4-0.1_arm64.deb"
+PM_OGG_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libo/libogg/libogg0_1.3.4-0.1_arm64.deb"
 PM_OGG_DEB_SHA256=910d1f3893a9340ea83bf19deebbc4e0d2362f22c274c2c2d3f00e4ba386c871
 # fix F24 (2026-08-23): RHH GameMaker ports (UFO 50, Undertale Yellow) run
 # patchscripts that hard-require a PREBUILT gmtoolkit binary at
@@ -110,9 +110,13 @@ PM_OGG_DEB_SHA256=910d1f3893a9340ea83bf19deebbc4e0d2362f22c274c2c2d3f00e4ba386c8
 # rolls it, this pin fails closed at build time and must be refreshed
 # deliberately (re-verify like any pin: double-download + on-device run).
 # Zip sha is the asset's own sha256, double-download cross-checked
-# (2026-08-23, tag published 2026-07-18T14:57:05Z, commit 3fc2018).
+# (refreshed 2026-09-18: upstream re-cut the rolling "latest" asset on
+# 2026-09-11T23:31:35Z, so the previous pin ae03b66f... failed closed; adopted
+# the new bytes per the refresh policy above. Prior pin 2026-08-23, commit 3fc2018.
+# On-device GM-port run NOT re-checked this cycle — no GameMaker port is in the
+# v0.5.0 issue-#1 device gate; verify a GM port before relying on it).
 PM_GMTOOLKIT_ZIP_URL="https://github.com/JeodC/gmtoolkit/releases/download/latest/gmtoolkit-aarch64.zip"
-PM_GMTOOLKIT_ZIP_SHA256=ae03b66fbd6931ca96ae5f45d4d4791c5b00912d1ca09bed3f9c020dbcec52ea
+PM_GMTOOLKIT_ZIP_SHA256=0196cd34db97eb0c9f8ba891132317519d7d98e9746150a43616d82f4d894f82
 # fix F27 (2026-08-23): the tunics_pm port bundles a libmodplug.so.1 that
 # dies on an illegal-instruction trap (udf #0) on this device the moment a
 # map transition changes the tracker music — gdb-attach caught the SIGSEGV
@@ -121,7 +125,7 @@ PM_GMTOOLKIT_ZIP_SHA256=ae03b66fbd6931ca96ae5f45d4d4791c5b00912d1ca09bed3f9c020d
 # files/port-fixes overlay, applied per launch so port reinstalls
 # self-heal. .deb sha is the .deb's own sha256, double-download
 # cross-checked and matched against Packages.xz on the first try.
-PM_MODPLUG_DEB_URL="http://deb.debian.org/debian/pool/main/libm/libmodplug/libmodplug1_0.8.9.0-3_arm64.deb"
+PM_MODPLUG_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libm/libmodplug/libmodplug1_0.8.9.0-3_arm64.deb"
 PM_MODPLUG_DEB_SHA256=31562caee099234947a228d6392156495b10f4b1960182e419554fe58ee50402
 # gate finding F10 (2026-08-22): the LÖVE 11.5 runtime's liblove links
 # vorbisfile/theoradec/mpg123 (readelf-verified) with pixman/fontconfig/uuid
@@ -137,25 +141,25 @@ PM_MODPLUG_DEB_SHA256=31562caee099234947a228d6392156495b10f4b1960182e419554fe58e
 # Each PM_*_SO_SHA256 below is the MANDATORY hash of the EXTRACTED library
 # file itself (verified below, separately from the .deb-level pin fetch()
 # checks) — hash mismatch on any extracted file blocks staging.
-PM_VORBISFILE_DEB_URL="http://deb.debian.org/debian/pool/main/libv/libvorbis/libvorbisfile3_1.3.7-1_arm64.deb"
+PM_VORBISFILE_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libv/libvorbis/libvorbisfile3_1.3.7-1_arm64.deb"
 PM_VORBISFILE_DEB_SHA256=f8f418e15f99905d4a2d532617511a11d700e814f8ead1a883deea2f7241970c
 PM_VORBISFILE_SO_SHA256=719c0288d8fc1b553d084be0c55ff72917f8159de438686d3701c97128128358
-PM_VORBIS_DEB_URL="http://deb.debian.org/debian/pool/main/libv/libvorbis/libvorbis0a_1.3.7-1_arm64.deb"
+PM_VORBIS_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libv/libvorbis/libvorbis0a_1.3.7-1_arm64.deb"
 PM_VORBIS_DEB_SHA256=2f902ae456bcada7b0d494d7bd7c994feb81c4158209d8a12c0b2d9e255edda7
 PM_VORBIS_SO_SHA256=7a47392715d2868d0ea2d1fe1a4e955fe3ba519da15a9b3d0c8ad3568551d72f
-PM_THEORA_DEB_URL="http://deb.debian.org/debian/pool/main/libt/libtheora/libtheora0_1.1.1+dfsg.1-15_arm64.deb"
+PM_THEORA_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libt/libtheora/libtheora0_1.1.1+dfsg.1-15_arm64.deb"
 PM_THEORA_DEB_SHA256=e1ca65eaa5c90af2f88a5ba157e4b61b38b3cdf7ca8b83f20db4ee2dc271c344
 PM_THEORADEC_SO_SHA256=5136ae940d31655f48285b7b8a37cf788127e2e6562b4537dc702fad57a47d45
-PM_MPG123_DEB_URL="http://deb.debian.org/debian-security/pool/updates/main/m/mpg123/libmpg123-0_1.26.4-1+deb11u1_arm64.deb"
+PM_MPG123_DEB_URL="http://snapshot.debian.org/archive/debian-security/20260801T000000Z/pool/updates/main/m/mpg123/libmpg123-0_1.26.4-1+deb11u1_arm64.deb"
 PM_MPG123_DEB_SHA256=725874446743de55934f6cdaa782f1d2667edbf3fc70ce2f6b1dd554e1fdd868
 PM_MPG123_SO_SHA256=a6b440e30be338b010468370ba97e832f3a5a682b1484aebd17f4713ff66234d
-PM_PIXMAN_DEB_URL="http://deb.debian.org/debian/pool/main/p/pixman/libpixman-1-0_0.40.0-1.1~deb11u1_arm64.deb"
+PM_PIXMAN_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/p/pixman/libpixman-1-0_0.40.0-1.1~deb11u1_arm64.deb"
 PM_PIXMAN_DEB_SHA256=f891c7a1015e3c234d6dc1219caa1fecb9fc2abffd3072d93a5fbf1a4b0a1756
 PM_PIXMAN_SO_SHA256=e1dfb301bdc6b510d71a581f7cec1547def276fb3b50670147e89c1e42d3c0bc
-PM_FONTCONFIG_DEB_URL="http://deb.debian.org/debian/pool/main/f/fontconfig/libfontconfig1_2.13.1-4.2_arm64.deb"
+PM_FONTCONFIG_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/f/fontconfig/libfontconfig1_2.13.1-4.2_arm64.deb"
 PM_FONTCONFIG_DEB_SHA256=18b13ef8a46e9d79ba6a6ba2db0c86e42583277b5d47f6942f3223e349c22641
 PM_FONTCONFIG_SO_SHA256=53748e544be7bc8262359f2cd0696d9184788f1146813fc006649330e9e0c363
-PM_UUID_DEB_URL="http://deb.debian.org/debian/pool/main/u/util-linux/libuuid1_2.36.1-8+deb11u2_arm64.deb"
+PM_UUID_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/u/util-linux/libuuid1_2.36.1-8+deb11u2_arm64.deb"
 PM_UUID_DEB_SHA256=2b3df73a725c3fe4ec8565ec04124e556122370fc63fd7886f7dfa25092df0ba
 PM_UUID_SO_SHA256=7581f2a9879fcd79db160f57889e80c912cad564edcf446bb3d0d06394c57e67
 # fix F40 (2026-08-28), same "h700 lib gap" story: Sonic 1 & Sonic 2 (the
@@ -173,12 +177,73 @@ PM_UUID_SO_SHA256=7581f2a9879fcd79db160f57889e80c912cad564edcf446bb3d0d06394c57e
 # Each PM_*_SO_SHA256 is the MANDATORY extracted-file hash (F10 rule); every
 # .deb sha is the .deb's own sha256, double-download cross-checked and matched
 # against Packages on the first try (no debian-security fallback this round).
-PM_SNDFILE_DEB_URL="http://deb.debian.org/debian/pool/main/libs/libsndfile/libsndfile1_1.0.31-2_arm64.deb"
+PM_SNDFILE_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libs/libsndfile/libsndfile1_1.0.31-2_arm64.deb"
 PM_SNDFILE_DEB_SHA256=35cd1ede25dda91abdfd23bc02fbfe9afc72e2a11178bebcc5ef76601a2a60b7
 PM_SNDFILE_SO_SHA256=c5573870b1c698838bdb8581703e1dc089fcf59a618e8fa2433f97061b4c8583
-PM_VORBISENC_DEB_URL="http://deb.debian.org/debian/pool/main/libv/libvorbis/libvorbisenc2_1.3.7-1_arm64.deb"
+PM_VORBISENC_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libv/libvorbis/libvorbisenc2_1.3.7-1_arm64.deb"
 PM_VORBISENC_DEB_SHA256=f1089e220c81e267caec859bf2e440bb78ed9f318bbb51cfd6c85d35bf80144b
 PM_VORBISENC_SO_SHA256=8393e8bb008aa47eb7074a6d06229bbbd5b2d104fcbe186f6a23f6f4955b0123
-PM_OPUS_DEB_URL="http://deb.debian.org/debian/pool/main/o/opus/libopus0_1.3.1-0.1_arm64.deb"
+PM_OPUS_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/o/opus/libopus0_1.3.1-0.1_arm64.deb"
 PM_OPUS_DEB_SHA256=86d96e6e99820be150e4e1d335cf8503c5802a3ac47103ba25eebf77a0699a13
 PM_OPUS_SO_SHA256=e40a7ac1b8dedd51c44c5efe0272a9e26ed9e4d479dcba82b9e07a1890892c70
+# fix F58 (2026-09-04), same "h700 lib gap" story, from GitHub issue #1 (RG35XX
+# Pro) and an LD_TRACE_LOADED_OBJECTS walk of the CURRENT port builds on the RG
+# SP: Doom Engines' Crispy Doom/Heretic/Hexen need libgomp.so.1 (OpenMP) and,
+# via their bundled fluidsynth, libgthread-2.0.so.0 — libglib-2.0 itself IS on
+# the system image (/lib/aarch64-linux-gnu), only the gthread sublibrary is
+# missing; GZDoom 4.11/4.14 need libgomp.so.1; Luanti (Minetest) needs
+# libgmp.so.10 (and NOT libcurl — that error in the report came from a stale
+# Minetest build carried over from another CFW). Only the three sonames ship
+# (not the whole glib set). All three .deb shas are the .deb's own sha256,
+# double-download cross-checked and matched against bullseye's Packages.xz on
+# the first try (no debian-security fallback needed this round); each
+# PM_*_SO_SHA256 is the MANDATORY extracted-file hash (F10 rule).
+PM_GOMP_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/g/gcc-10/libgomp1_10.2.1-6_arm64.deb"
+PM_GOMP_DEB_SHA256=813af2e0b8ba0a7cea18c988cd843412ef6d0415700fc860d62816750e741670
+PM_GOMP_SO_SHA256=d199903e13e452411c815135b2dc447754189c3a5fa56ce49eebf5695824f0ad
+PM_GLIB_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/g/glib2.0/libglib2.0-0_2.66.8-1+deb11u4_arm64.deb"
+PM_GLIB_DEB_SHA256=6acd43e7296d0f1baceb582bf323fffa6ce4d428f6ee88d9ebc0a45d9001a399
+PM_GTHREAD_SO_SHA256=6f91353be745e59fbb15125d908d32e544eed5f3ffe85fe2160b799bb183fbf1
+PM_GMP_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/g/gmp/libgmp10_6.2.1+dfsg-1+deb11u1_arm64.deb"
+PM_GMP_DEB_SHA256=d52619b6ff8829aa5424dfe3189dd05f22118211e69273e9576030584ffcce80
+PM_GMP_SO_SHA256=58e99cc018e8b3e5b5d15dc8a92751b9b885ce80afae47ff53c921f5c5f86458
+# fix F63 (2026-09-28), same "h700 lib gap" story, found in the v0.5.0 device
+# gate on the RG SP (NextUI rc10): Doom Engines' front-end menu is a LÖVE app
+# whose bundled libs/lovelibs/libcairo.so.2 is built with cairo's X backends,
+# and the port does not ship their libraries (other CFWs have them in the
+# system image) — so ./love failed at load and the launcher exited before any
+# game was picked. Only these four sonames are missing: libxcb.so.1,
+# libX11.so.6, libXau.so.6 and libXdmcp.so.6 are already in the pak's lib/
+# (upstream). Device pre-check with exactly these four on the path: 0 missing
+# libraries, 0 undefined symbols (LD_WARN + LD_BIND_NOW). Deb shas are the
+# .deb's own sha256, double-download cross-checked and matched against
+# bullseye's Packages.xz (snapshot 20260801T000000Z; no security versions);
+# each PM_*_SO_SHA256 is the MANDATORY extracted-file hash (F10 rule).
+PM_XCBSHM_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libx/libxcb/libxcb-shm0_1.14-3_arm64.deb"
+PM_XCBSHM_DEB_SHA256=e7f59fc41744fe6b8b9ba97b262a051621173689e2a3e5ebb26dc253c9bdc48b
+PM_XCBSHM_SO_SHA256=05fb9e180f00273c60f7c86ef9a6b904a42a8fe08d40edb46f146fc8c8ee9235
+PM_XCBRENDER_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libx/libxcb/libxcb-render0_1.14-3_arm64.deb"
+PM_XCBRENDER_DEB_SHA256=e794ba2657c5f21dcca327343b41b1997a150b6ac27977970404d60f471be48a
+PM_XCBRENDER_SO_SHA256=a5d01dae5826acfed81d3bd6eaca589e384917827ff343867df2ae06963d2328
+PM_XRENDER_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libx/libxrender/libxrender1_0.9.10-1_arm64.deb"
+PM_XRENDER_DEB_SHA256=fcae69900b599e7b31b31eafa203a184e00376ade1d2f74f9b3d7b24991573a0
+PM_XRENDER_SO_SHA256=7af329737a4f29b14155791f4f5d3f077ebf68f4e70ee841f23d3bf1697b8746
+PM_XEXT_DEB_URL="http://snapshot.debian.org/archive/debian/20260801T000000Z/pool/main/libx/libxext/libxext6_1.3.3-1.1_arm64.deb"
+PM_XEXT_DEB_SHA256=57237ecf54662372e206b154c0ab6096e05955e048552575b45d3ad14a6ff6e5
+PM_XEXT_SO_SHA256=dc8ba51df716b102eac066f69686f573a03ce2f0ef25b998f24c76c46393f109
+# fix F64 (2026-09-28): NextUI-h700 ships no glibc gconv modules (no gconv dir
+# or gconv-modules config anywhere on rc10), so iconv_open() fails for every
+# charset outside glibc's builtins; Luanti converts all UI text UTF-8 ->
+# UTF-32LE through iconv and showed "<invalid UTF-8 string>" everywhere (v0.5.0
+# device gate). The device's glibc is Ubuntu's 2.35-0ubuntu3 build: its
+# /lib/aarch64-linux-gnu/libc.so.6 (sha256 dd80538bfc685542511168f4cde5dcce476c22d310e727578f17cf23eebb6822)
+# is byte-identical to the one in this .deb, so this build's gconv modules load
+# into it (a gconv module must match its glibc; run_port re-checks the build).
+# Only UTF-16.so and UTF-32.so ship. The Launchpad librarian URL is permanent;
+# the .deb sha matches ports.ubuntu.com (double download) and jammy's
+# release-pocket Packages.xz; each *_SO_SHA256 is the MANDATORY extracted-file
+# hash (F10 rule).
+PM_LIBC6_JAMMY_DEB_URL="https://launchpadlibrarian.net/588938514/libc6_2.35-0ubuntu3_arm64.deb"
+PM_LIBC6_JAMMY_DEB_SHA256=b1206b51690a810efc701e1d311e0ac5fd9a9f0f8e216585362512d805d261af
+PM_GCONV_UTF16_SO_SHA256=01f61e5720066d49a7df32753fe08096c93300349f1ab83d38317138a00013da
+PM_GCONV_UTF32_SO_SHA256=0dce658e0bfca311c7bc5b1fd2bc608599f0d169ecad06790111ddf073abba53

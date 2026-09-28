@@ -83,10 +83,14 @@ Confirmed working out of the box on the RG SP:
 - [Celeste](https://portmaster.games/detail.html?name=celeste)
 - [Deltarune](https://portmaster.games/detail.html?name=deltarune)
 - [Dokimon: Quest](https://portmaster.games/detail.html?name=dokimon) (a "GMLive folder not found. Skipping patch." line while it patches on first launch is harmless — the patch still completes)
+- [Doom Engines](https://portmaster.games/detail.html?name=doomengines) (Crispy Doom and GZDoom; the libraries it needs are bundled automatically)
 - [Downwell](https://portmaster.games/detail.html?name=downwell)
 - [Lasagna Boy Classic](https://portmaster.games/detail.html?name=lasagnaboyclassic) (via the built-in input translator — automatic)
+- [Luanti (Minetest)](https://portmaster.games/detail.html?name=minetest) (the first start of a new world can take a few minutes)
 - [Mina the Hollower](https://portmaster.games/detail.html?name=mina) (its Metal→GLES engine is switched to native OpenGL ES 3 automatically — see below)
+- [OpenTTD](https://portmaster.games/detail.html?name=openttd) (the d-pad moves the mouse pointer)
 - [Pizza Tower](https://portmaster.games/detail.html?name=pizzatower) (its FMOD sound is fixed automatically — see below)
+- [Quakespasm](https://portmaster.games/detail.html?name=quakespasm) (its graphics wrapper is refreshed automatically on launch)
 - [Road Invaders](https://portmaster.games/detail.html?name=road.invaders) (via the built-in input translator — automatic)
 - [Sonic 1](https://portmaster.games/detail.html?name=sonic.1) (its controls, screen fit and sound are corrected for the RG SP automatically)
 - [Sonic 2](https://portmaster.games/detail.html?name=sonic.2) (its controls, screen fit and sound are corrected for the RG SP automatically)
@@ -96,6 +100,7 @@ Confirmed working out of the box on the RG SP:
 - [Undertale](https://portmaster.games/detail.html?name=undertale)
 - [Undertale Yellow](https://github.com/JeodC/RHH-Ports/tree/main/ports/released/gamemakerengine/utyellow) (an [RHH port](https://github.com/JeodC/RHH-Ports))
 - [VVVVVV](https://portmaster.games/detail.html?name=vvvvvv)
+- [Wolfenstein 3D](https://portmaster.games/detail.html?name=wolf3d) (ECWolf)
 
 Each link is the game's port page, with what you need to provide (e.g. purchased game files) and where to put it.
 
@@ -108,7 +113,7 @@ A few ports need capabilities the RG SP's system image doesn't provide (each ver
 - **Alex the Allegator 1** — needs a Wayland/DRM display path the RG SP's kernel doesn't provide (it has only the legacy framebuffer).
 - **Mage Recall** — needs the same Wayland/DRM display path.
 - **Momodora: Reverie under the Moonlight** — needs x86 emulation plus that display path.
-- **Curseball** — needs a 32-bit graphics stack the RG SP lacks.
+- **Curseball**, **Serious Sam: The First Encounter** and other 32-bit-only games — need a 32-bit graphics stack. On NextUI-h700 before the rc10 update there is none, so these games can't start there, even though PortMaster still lists them. NextUI rc10 does ship 32-bit libraries, but none of these games has been tested on it yet.
 
 Details in [`docs/h700-fixes.md`](docs/h700-fixes.md#ports-this-platform-cant-run).
 
@@ -164,7 +169,7 @@ Full details: [`docs/h700-fixes.md`](docs/h700-fixes.md).
 
 ## Build from source
 
-Needs a POSIX shell with `curl`, `zip`/`unzip`, `tar`, `ar`, `awk`, `sed`, `shasum`, and `file` — no Docker. (Tests also need `python3` and a C compiler.)
+Needs a POSIX shell with `curl`, `zip`/`unzip`, `tar`, `ar`, `awk`, `sed`, `shasum`, `file`, `zstd`, and `xz` — no Docker. (Tests also need `python3` and a C compiler.)
 
 ```sh
 make pak     # builds dist/Emus/h700/PORTS.pak.zip from pinned, checksum-verified upstream

@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (up to F57) below match the internal numbering used while these were
+Fix IDs (up to F64) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. The numbering has gaps — some IDs are
 reserved or live on other branches until release. A closing section records the ports
@@ -99,6 +99,37 @@ directory so it never depends on what the host image happens to provide.
   h700 720×480 that leaves huge side bars. `run_port` rewrites `LOW=214` to the
   filling value `240×W/H` (360 on the RG SP's 720×480; panel size from the F51
   device profile), mtime-neutrally inside the F32 window.
+- **F58 — Doom Engines and Luanti exit at load: `libgomp.so.1`,
+  `libgthread-2.0.so.0`, `libgmp.so.10` missing.** Reported in issue #1 and
+  re-traced on the RG SP against the *current* port builds with
+  `LD_TRACE_LOADED_OBJECTS`: Crispy Doom/Heretic/Hexen need OpenMP's
+  `libgomp.so.1` and — through their bundled fluidsynth — glib's
+  `libgthread-2.0.so.0` (glib itself is on the system image in
+  `/lib/aarch64-linux-gnu`; only the gthread sublibrary is absent); GZDoom
+  4.11/4.14 need `libgomp.so.1`; Luanti's `bin/luanti` needs `libgmp.so.10`
+  and nothing else — the `libcurl.so.4` error in the report came from a stale
+  Minetest build carried over from another CFW. Fix: ship the three sonames
+  (only gthread out of `libglib2.0-0`), pinned from bullseye with the F10
+  extracted-hash rule.
+- **F63 — Doom Engines exits straight back to the menu: `libxcb-shm.so.0`,
+  `libxcb-render.so.0`, `libXrender.so.1`, `libXext.so.6` missing.** Found in
+  the v0.5.0 device gate (RG SP, NextUI rc10): the port's front-end menu is a
+  LÖVE app whose bundled `libs/lovelibs/libcairo.so.2` is built with cairo's X
+  backends, and the port does not ship their libraries (other CFWs have them
+  in the system image). `love` failed at load, so no game was ever picked and
+  the launcher exited. Fix: ship the four sonames from bullseye with the F10
+  extracted-hash rule; the rest of the chain (`libxcb`, `libX11`, `libXau`,
+  `libXdmcp`) was already in the pak's `lib/`.
+- **F64 — Luanti shows `<invalid UTF-8 string>` for every label: glibc's
+  UTF-16/UTF-32 conversion modules missing.** Found in the v0.5.0 device gate
+  once F58 let Luanti start: NextUI-h700 ships no glibc `gconv` modules at all,
+  and Luanti converts every UI string from UTF-8 to UTF-32LE through `iconv`,
+  so each conversion failed. Fix: ship `UTF-16.so` and `UTF-32.so` from the
+  Ubuntu 22.04 `libc6` build whose `libc.so.6` is byte-identical to the
+  device's, with a trimmed `gconv-modules`, under `lib/gconv/`; `run_port`
+  exports `GCONV_PATH` there — only on h700, only when the port has not set its
+  own, the firmware still has no gconv of its own, and the system glibc is still
+  that exact build (a firmware glibc update falls back to today's behaviour).
 
 ## Roms launcher trigger file (F2)
 
@@ -752,6 +783,55 @@ above: volume is int32 index 4 (byte offset 16) and brightness is int32
 index 1 (byte offset 4), both on NextUI's 0–20 / 0–10 scales — the pre-gate
 guess was wrong, and the shipped shim now reads 16/4.
 
+### 0.5.0
+
+**Fixes** (from GitHub issue #1, an RG35XX Pro report, plus two rc10
+regressions; device-verified on the RG SP except F56, F61 and F62's pre-rc10
+path)
+- F54: gptokeyb passthrough — keyboard/mouse ports now get gptokeyb's own
+  virtual keyboard and mouse through `SDL_EVDEV_DEVICES`, on top of the shim's
+  existing synthesis fallback; Sonic 1/2 stay on the synthesis path
+  (blocklisted); OpenTTD's launcher gets the `ANALOGSTICKS` alias it was
+  missing
+- F55: Duke Nukem 3D and the rest of the EDuke32 family (Blood, Redneck
+  Rampage, PowerSlave) start again — the 0.4.0 sleep-proxy ALSA config carried
+  no `hint {}`, so SDL enumerated zero audio devices
+- F56: RG35XX Pro gets its own two-stick `rg35xx-h` profile instead of the
+  stickless `rg35xx-plus` one; a stickless profile on a sticks-class pad now
+  logs a warning
+- F57: the in-game HUD's brightness and volume gauges read live again on
+  NextUI h700-rc10 — the decoder now guards on a minimum block length instead
+  of the old rc8 struct size
+- F58: Doom Engines and Luanti load — shipped the three missing sonames
+  (`libgomp.so.1`, `libgthread-2.0.so.0`, `libgmp.so.10`)
+- F59: ports run with stdin from `/dev/null` (Wolfenstein 3D / ECWolf no
+  longer hangs in its console IWAD picker)
+- F60: gl4es ports whose bundled fake EGL predates `eglDestroySyncKHR`
+  (Quakespasm) get the pak's own pinned stub swapped in at launch; a launcher
+  that sets no `LD_LIBRARY_PATH` gets its own `libs.aarch64`/`libs` back
+- F61: launchers that declare `PORTDIR=` but no `GAMEDIR=` (Fallout 1) run
+  instead of being refused
+- F62: `DEVICE_HAS_ARMHF` is claimed only when a 32-bit libdl exists behind
+  the loader, correcting the value port scripts see and the `device_info.txt`
+  dump — harbourmaster works out armhf capability itself from the loader
+  alone, so pre-rc10 firmware still offers armhf-only ports (Serious Sam: The
+  First Encounter) and they still fail to load ("wrong ELF class"); rc10
+  ships a real 32-bit userland and keeps `Y`; the stray `lscpu` probe is
+  silenced
+- F63: Doom Engines' menu loads — shipped four more sonames its bundled
+  cairo needed (`libxcb-shm`, `libxcb-render`, `libXrender`, `libXext`)
+- F64: Luanti's text renders correctly instead of `<invalid UTF-8 string>` —
+  shipped glibc's missing UTF-16/UTF-32 `gconv` conversion modules
+
+**Build:** the pinned bullseye `.deb`s now come from snapshot.debian.org
+(bullseye itself is archived on deb.debian.org); the gmtoolkit pin was
+refreshed to the bytes upstream re-published under the same tag (not
+re-verified on device with a GameMaker port that patches on first launch).
+
+**Upgrading from 0.4.0:** unzip-over (self-healing); no manual steps. Ports
+carried over from another CFW's card may be stale builds — let PortMaster
+update/reinstall them before retesting.
+
 ### 0.4.0
 
 **Upstream base:** ben16w/minui-portmaster 2.13.0 → 2.14.0 — the bundled
@@ -954,7 +1034,16 @@ device (officially PortMaster-supported) to separate "the port is broken" from
   need a 32-bit armhf userspace, including a 32-bit mali GLES driver, that
   NextUI-h700 doesn't ship (the armhf loader is present, the libraries are
   not); its `gmloader` dies resolving a 64-bit `libstdc++.so.6`. It renders on
-  the ROCKNIX device, which carries the 32-bit stack.
+  the ROCKNIX device, which carries the 32-bit stack. This description holds
+  for NextUI-h700 before rc10; rc10 ships the 32-bit userland and GL stack
+  described in F62, and these ports are untested there. Harbourmaster works
+  out armhf capability itself from the loader alone, so PortMaster still
+  offers these ports on pre-rc10 firmware and they still fail to load
+  ("wrong ELF class") — *Serious Sam: The First Encounter* was the reported
+  case (issue #1). Since 0.5.0 (F62) the pak corrects the `DEVICE_HAS_ARMHF`
+  value port scripts see and the `device_info.txt` dump to match, but that
+  alone can't stop harbourmaster from listing them; only a patch to
+  harbourmaster's own probe could.
 - **libretro-class ports** — need the CFW's RetroArch, which NextUI doesn't
   expose to paks.
 
@@ -1844,7 +1933,7 @@ device.
 6. OpenTTD text input — **PASS**: L2/R2 typed `-`/`=` into the Multiplayer
    player-name field. (Y is unassigned in the port's own gptk; X is forward
    Delete and could not be exercised with the text cursor at the end.)
-7. Doom Engines — **DEFERRED**: needs the v0.4.1 library pins (F58), not yet
+7. Doom Engines — **DEFERRED**: needs the v0.5.0 library pins (F58), not yet
    on the device.
 8. HUD toggle + sleep/resume during a passthrough port (BYTEPATH) — **PASS**:
    Menu toggles the overlay; power sleeps, power resumes with music.
@@ -1862,3 +1951,136 @@ OpenTTD's `$ANALOGSTICKS` gptk path (see the bullets above).
 gptokeyb's face naming against the overlaid gptk; mouse synthesis as a
 fallback only if a gptokeyb-less mouse port ever appears; upstream, NextUI's
 SDL could scan `/dev/input` itself and make this step unnecessary.
+
+## The sleep-proxy output was invisible to SDL's device enumeration (F55)
+
+0.4.0's F47 routed every port's `default` PCM through the pak's suspend-proxy
+plugin via a self-contained `ALSA_CONFIG_PATH` file. That file declared
+`pcm.default` without a `hint {}` block — and alsa-lib's
+`snd_device_name_hint()`, which is what SDL2's ALSA backend enumerates output
+devices with, lists only hinted nodes (the stock `/etc/asound.conf` chain is
+hinted; `defaults.namehint.showall` is never set in a self-contained file).
+Result: SDL saw zero audio devices, `SDL_GetAudioDeviceName(0,0)` returned
+NULL, and the EDuke32 family's `Xstrdup()` of it segfaulted at sound init —
+Duke Nukem 3D, Blood, Redneck Rampage and PowerSlave all "closed immediately"
+since 0.4.0 (issue #1). Device-proven with `aplay -L` (the same alsa-lib call):
+nothing listed; with one `hint { show on description "…" }` inside
+`pcm.default`, exactly `default` listed and still playing through the proxy.
+Fix: that hint block. `tests/container-alsa-check.sh` now proves the
+hinted/unhinted enumeration rule in the arm64 container.
+
+## RG35XX Pro is a two-stick device (F56)
+
+The F51 pin table folded `rg35xxpro` into the stickless `rg35xx-plus` arm, and
+exact-SKU pins are deliberately never class-refined (F53), so the Pro — two
+hall sticks, the sticks key set on `js0` — got a zero-stick profile and every
+port chose its d-pad control scheme (issue #1's `PORTS.txt` showed the
+mismatch). Fix: its own arm, `rg35xx-h`. Because this is exactly how a mispin
+hides, the pin block now logs `gt-h700: WARNING: profile <p> has no analog
+sticks but this pad reports sticks` whenever a stickless profile meets the
+sticks class (the CubeXX, pinned `rg34xx-h` for its 720×720 panel, is exempt).
+
+## Ports that read stdin hung on NextUI (F59)
+
+NextUI starts paks with the serial console as stdin and `run_port` passed it
+straight to the port; every other CFW hands ports `/dev/null`. ECWolf
+(Wolfenstein 3D) ends up in its console IWAD picker — its launcher passes
+`--data wl1` but ECWolf compares the extension case-sensitively against the
+uppercase `VSWAP.WL1` FAT keeps, so nothing matches (an upstream launcher
+bug) — and then blocks in `scanf()` forever: the "black screen" in issue #1
+(gdb-attached on the RG SP; the game had drawn nothing yet). With `/dev/null`
+the `scanf` fails and the picker returns the last set silently, exactly as on
+other CFWs. Fix: `run_port` runs the port with `</dev/null`. Generic — any
+port that prompts on stdin now gets EOF instead of a hang.
+
+## gl4es ports crashed on the first frame: the fake EGL and NextUI's SDL (F60)
+
+Quakespasm segfaulted the moment it started. `gdb` on the RG SP put the crash
+at `MALI_GLES_SwapWindow` in NextUI's SDL fork (`SDL_maliopengles.c:73`),
+calling address 0: the fork calls `egl_data->eglCreateSyncKHR` and
+`->eglDestroySyncKHR` **unguarded**, resolving both through
+`eglGetProcAddress` on whatever `SDL_VIDEO_EGL_DRIVER` names. gl4es ports point
+SDL at gl4es's *fake EGL* stub (`libgl_default.txt` → `LIBGL_FB=2` → the
+launcher's `SDL_VIDEO_EGL_DRIVER="$GAMEDIR/gl4es.aarch64/libEGL.so.1"`).
+Quakespasm's stub predates gl4es's `eglDestroySyncKHR` and returns NULL for
+unknown names; Jedi Outcast's newer stub exports it plus a catch-all
+`eglStub`, and JO runs. Substituting JO's stub made Quakespasm play with its
+own older `libGL.so.1` (the mix is device-proven). Bypassing the fake EGL is
+not a fix: with the real Mali EGL these ports fail `SDL_CreateWindow` and hit a
+*second* unguarded pointer in the fork's cleanup (`SDL_malivideo.c:396`).
+
+Fix: the pak ships gl4es's fake EGL built from a pinned ptitSeb/gl4es commit
+(`make gl4es-egl`, provenance in `assets/gl4es-libEGL.txt`), staged under
+`lib/gl4es-egl/` — a subdirectory on purpose. `lib/` itself is on every port's
+`LD_LIBRARY_PATH`, and upstream's own `files/lib.tar.gz` already carries a
+top-level `libEGL.so.1` (an older gl4es fake EGL) that `launch.sh` unpacks
+into the pak's `lib/` on the first boot after an install or unzip-over; a
+top-level stub here would collide with that unpack. That build lane pins apt
+to a snapshot.debian.org date and takes CMake from PyPI, since bullseye's
+packaged CMake (3.18) predates the 3.19 the pinned gl4es commit needs.
+`run_port` swaps the built stub into any `gl4es.aarch64/` or `gl4es/` dir
+whose stub lacks the symbol (original kept as `.gt-orig`; idempotent; 32-bit
+`gl4es.armhf/` never touched). Companion: PortMaster-New's Quakespasm 0.97.0
+launcher dropped the `LD_LIBRARY_PATH` line every earlier version had, so its
+bundled `libs.aarch64/` (libmad, libmikmod) was never searched and a fresh
+install died at load on lib-poor CFWs; when a launcher sets no
+`LD_LIBRARY_PATH` at all, `run_port` now prepends the port's own
+`libs.aarch64`/`libs` dirs. Both
+are upstream bugs (NextUI: guard the two pointers; PortMaster: refresh
+Quakespasm's gl4es and restore its lib path).
+
+## Launchers without `GAMEDIR=` were refused (F61)
+
+`run_port` resolves the port folder from a `GAMEDIR=` line in the launcher and
+otherwise refuses to run ("No GAMEDIR found … not executing game"). Fallout 1's
+launcher declares `PORTDIR=` only (issue #1). Fix: fall back to `PORTDIR=`
+when `GAMEDIR` is empty, restoring `run_port`'s own `$PORTDIR` around the eval.
+
+## The armhf capability claim, and a stray `lscpu` (F62)
+
+`device_info.txt` sets `DEVICE_HAS_ARMHF="Y"` when `/lib/ld-linux-armhf.so.3`
+exists. The rc8-era NextUI-h700 image (the one the issue #1 reporter's logs
+match) had that loader — and behind it exactly one 32-bit library,
+`libc.so.6` — but `device_info.txt` still said `DEVICE_HAS_ARMHF="Y"`, so
+armhf-only ports (`PORT_32BIT="Y"`, e.g. *Serious Sam: The First Encounter*)
+installed and then died at load resolving the 64-bit `libdl.so.2` ("wrong ELF
+class", issue #1). Found in the final review: harbourmaster doesn't read
+`DEVICE_HAS_ARMHF` at all — `cpu_info_v2()` in its own
+`pylibs/harbourmaster/hardware.py` works out armhf capability itself from
+`/lib/ld-linux-armhf.so.3`, the same loader check `device_info.txt` makes, and
+neither harbourmaster nor the PortMaster GUI reads this variable. So this fix
+claims `Y` only when a 32-bit `libdl.so.2` exists next to the loader
+(`/usr/lib/arm-linux-gnueabihf/` or `/lib/arm-linux-gnueabihf/`), correcting
+the value port scripts see and the `device_info.txt` dump — but it does NOT
+stop harbourmaster from listing armhf-only ports on pre-rc10 firmware. They're
+still offered there and still fail to load the same way; stopping that would
+need a patch to harbourmaster's own `cpu_info_v2`, a possible follow-up that
+can't be device-tested on rc10 because rc10 has the libraries. Same edit also
+silences the `lscpu` probe BaseOS can't satisfy (`lscpu: command not found`
+headed every port log).
+
+NextUI `h700-rc10` (found in the v0.5.0 device gate) ships a real armhf
+userland — 14 libraries including libc/libdl/libm/libpthread/libstdc++, plus a
+32-bit GL stack in `/usr/lib32` (libEGL, libGLESv2, libSDL2, libmali). On rc10
+the probe therefore keeps `Y`, correct by design; no armhf-only harbourmaster
+port has been tried on rc10 yet. F45's pak-hosted runtime for Animal Crossing
+is not a harbourmaster install and is unaffected either way.
+
+Not done, deliberately: generalizing F45's pak-hosted armhf runtime to every
+`PORT_32BIT` port (a possible future phase — the runtime would need the full
+32-bit GLES stack the Serious Sam class expects).
+
+Planned as F57; renumbered because the rc10 HUD fix took that ID on main.
+
+**Device gate (2026-09-28, RG SP, NextUI h700-rc10).** PASS: Wolfenstein 3D
+(F59); Quakespasm (F60 — both the gl4es-EGL swap and the library-path fallback
+fired on first launch, and stayed idempotent on repeat launches); Doom
+Engines, both Crispy Doom and GZDoom (F58, F63); Luanti with Mineclonia (F58,
+F64; the first world load takes a few minutes); Duke Nukem 3D with the Atomic
+data (F55 — menu, game and sound all confirmed; the port only walks with the
+analog stick, so it can't move on the stickless RG SP, which is the port's own
+control design, not a pak bug); and the regression check on Celeste
+(sleep/resume keeps its sound), BYTEPATH, Tunics!, and OpenTTD (d-pad mouse,
+the F54 `ANALOGSTICKS` alias). Not device-tested: F56 (no RG35XX Pro on hand),
+F61 (Fallout 1 not owned), and F62's pre-rc10 path (on rc10 the probe prints
+`Y`, which is correct).

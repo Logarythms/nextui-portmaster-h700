@@ -118,6 +118,29 @@ assert_eq "$(run_pin rgsp   '' "$FIX/rg34xxsp.txt")" "rg34xx-h 720 480"   "exact
 assert_eq "$(run_pin rg40xx '' "$FIX/rg34xxsp.txt")" "rg40xx-h 640 480"   "rg40xx bucket unchanged by class"
 assert_eq "$(run_pin rg34xx '' "$FIX/rgsp.txt")"     "rg34xx-h 720 480"   "rg34xx bucket + plain stays rg34xx-h"
 
+# --- F56: RG35XX Pro is a two-stick SKU (issue #1: it was pinned to the stickless rg35xx-plus) ---
+assert_eq "$(run_pin rg35xxpro)"        "rg35xx-h 640 480"    "rg35xxpro token"
+assert_eq "$(run_pin rg35xx RG35xxPro)" "rg35xx-h 640 480"    "RG35xxPro model"
+assert_eq "$(run_pin rg35xxplus)"       "rg35xx-plus 640 480" "rg35xxplus stays stickless"
+assert_contains "$work/launch.sh" 'rg35xxpro)            gt_pm_device=rg35xx-h'
+# stickless exact-SKU profile + a pad reporting sticks -> profile unchanged (exact SKUs are never
+# refined) but a breadcrumb is printed; the CubeXX (pinned rg34xx-h for its 720x720 panel, has
+# sticks) is exempt; a two-stick profile or a plain pad never warns
+run_pin_out() { # $1=DEVICE ('' = unset) $2=RGXX_MODEL ('' = unset) $3=input-devices fixture; prints block stdout, newlines -> ;
+    fake="$SANDBOX/pinout-$$"; rm -rf "$fake"; mkdir -p "$fake"
+    env -i PATH="$PATH" HOME="$fake" PLATFORM=h700 ${1:+DEVICE="$1"} ${2:+RGXX_MODEL="$2"} \
+        GT_INPUT_DEVICES_FILE="$3" sh -c ". \"$SANDBOX/pinblock.sh\" | tr '\n' ';'"
+}
+out=$(run_pin_out rg35xxplus '' "$FIX/rg34xxsp.txt")
+case "$out" in *'gt-h700: WARNING: profile rg35xx-plus has no analog sticks'*) ;; *) echo "missing stick-mismatch warning: $out"; exit 1;; esac
+assert_eq "$(run_pin rg35xxplus '' "$FIX/rg34xxsp.txt")" "rg35xx-plus 640 480" "exact SKU still not refined by the class"
+out=$(run_pin_out cube '' "$FIX/rg34xxsp.txt")
+case "$out" in *WARNING*) echo "CubeXX must not warn: $out"; exit 1;; esac
+out=$(run_pin_out rg35xxpro '' "$FIX/rg34xxsp.txt")
+case "$out" in *WARNING*) echo "a two-stick profile must not warn: $out"; exit 1;; esac
+out=$(run_pin_out rg35xxplus '' "$FIX/rgsp.txt")
+case "$out" in *WARNING*) echo "a plain pad must never warn: $out"; exit 1;; esac
+
 # --- F53: use-stickless hatch -> GT_ANALOG_STICKS=0 (tables untouched; only device_info's ANALOG_STICKS) ---
 run_hatch() { # $1=userdata dir
     fake="$SANDBOX/hatchhome-$$"; rm -rf "$fake"; mkdir -p "$fake"
@@ -160,6 +183,28 @@ scratch="$SANDBOX/pmpak-analogsticks2"; mkdir -p "$scratch"
 cp "$work/pak.json" "$work/launch.sh" "$work/device_info.txt" "$scratch/"
 GT_STAGE_EDIT_ONLY="$scratch" sh "$ROOT/build/build-pak.sh" portmaster
 assert_eq "$(grep -c 'gt-h700-analogsticks' "$scratch/device_info.txt")" "1" "analogsticks alias idempotent on rerun"
+# --- F62: DEVICE_HAS_ARMHF needs a 32-bit libdl behind the loader (issue #1: armhf-only ports offered, then dead) ---
+assert_contains "$work/device_info.txt" 'gt-h700-no-armhf'
+na=$(grep -n 'gt-h700-no-armhf' "$work/device_info.txt" | head -1 | cut -d: -f1)
+ex=$(grep -n '^export DEVICE_HAS_ARMHF$' "$work/device_info.txt" | head -1 | cut -d: -f1)
+[ "$na" -lt "$ex" ] || { echo "no-armhf probe must run before export DEVICE_HAS_ARMHF"; exit 1; }
+sed -n "${na},$((na + 4))p" "$work/device_info.txt" > "$SANDBOX/noarmhf.sh"
+out=$(env -i PATH="$PATH" GT_ARMHF_LIBDL="$SANDBOX/does-not-exist" sh -c "DEVICE_HAS_ARMHF=Y; . \"$SANDBOX/noarmhf.sh\"; printf '%s' \"\$DEVICE_HAS_ARMHF\"")
+assert_eq "$out" "N" "armhf loader without a 32-bit libdl -> N"
+: > "$SANDBOX/fake-libdl.so.2"
+out=$(env -i PATH="$PATH" GT_ARMHF_LIBDL="$SANDBOX/fake-libdl.so.2" sh -c "DEVICE_HAS_ARMHF=Y; . \"$SANDBOX/noarmhf.sh\"; printf '%s' \"\$DEVICE_HAS_ARMHF\"")
+assert_eq "$out" "Y" "a real 32-bit libdl keeps Y"
+out=$(env -i PATH="$PATH" GT_ARMHF_LIBDL="$SANDBOX/does-not-exist" sh -c "DEVICE_HAS_ARMHF=N; . \"$SANDBOX/noarmhf.sh\"; printf '%s' \"\$DEVICE_HAS_ARMHF\"")
+assert_eq "$out" "N" "N stays N"
+# --- F62: lscpu is absent on BaseOS; the probe is silenced, DEVICE_CPU stays informational ---
+assert_contains "$work/device_info.txt" 'gt-h700-lscpu'
+# shellcheck disable=SC2016
+assert_contains "$work/device_info.txt" 'DEVICE_CPU=$(lscpu 2>/dev/null | grep'
+sh -n "$work/device_info.txt" || { echo "edited device_info.txt does not parse"; exit 1; }
+# idempotent: a second build run must not duplicate either edit
+GT_PM_DB_DIR="$dbdir" GT_STAGE_EDIT_ONLY="$work" sh "$ROOT/build/build-pak.sh" portmaster
+assert_eq "$(grep -c 'gt-h700-no-armhf' "$work/device_info.txt")" 1 "no-armhf marker once"
+assert_eq "$(grep -c 'gt-h700-lscpu' "$work/device_info.txt")" 1 "lscpu marker once"
 
 # --- remap hook: after the 4-space pugwash-reboot rm, before the GUI loop ---
 assert_contains "$work/launch.sh" 'gt-h700-remap-hook'
