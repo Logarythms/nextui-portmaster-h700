@@ -1849,7 +1849,8 @@ event-driven menus **and** its polled gameplay work through gptokeyb itself.
   (input numbers are monotonic for the boot, event numbers are recycled —
   Doom Engines starts gptokeyb twice), waiting up to 2 s for the node to
   appear — but only when some gptokeyb was started with a mapping (`-c`).
-  Without one gptokeyb never creates its virtual keyboard (native-controller
+  Without one (and without its text-input mode, `TEXTINPUTINTERACTIVE` /
+  `TEXTINPUTPRESET`) gptokeyb creates no virtual keyboard (native-controller
   ports run it only as the Select+Start quit watcher: Balatro, Deltarune,
   Mina the Hollower, …), so the shim checks once and moves on instead of
   holding the game's start for 2 s (device-gate finding). It then exports
@@ -1933,8 +1934,13 @@ device.
 6. OpenTTD text input — **PASS**: L2/R2 typed `-`/`=` into the Multiplayer
    player-name field. (Y is unassigned in the port's own gptk; X is forward
    Delete and could not be exercised with the text cursor at the end.)
-7. Doom Engines — **DEFERRED**: needs the v0.5.0 library pins (F58), not yet
-   on the device.
+7. Doom Engines — **PASS** (2026-09-28, on the merged 0.5.0 build with the
+   F58/F63 library pins): Crispy Doom and GZDoom both play (the 0.5.0 device
+   gate below); the engine's `log.txt` shows `gt-input-remap: loaded` and
+   `gptokeyb passthrough -> 3:/dev/input/event3 (synthesis off)`. The engine
+   picker attached too: its gptokeyb has no `-c` but the launcher exports
+   `TEXTINPUTINTERACTIVE`, which makes gptokeyb create its keyboard anyway,
+   and the single node check found it.
 8. HUD toggle + sleep/resume during a passthrough port (BYTEPATH) — **PASS**:
    Menu toggles the overlay; power sleeps, power resumes with music.
 9. Select+Start quit — **PASS**: ports quit, NextUI responsive.

@@ -45,7 +45,7 @@
     {
       "id": 6,
       "subject": "Task 6: Device gate on the RG SP (Camille's hands)",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [
         5
       ],
@@ -64,5 +64,5 @@
       "description": "Device-gate findings 2026-09-28: (A) no 2 s wait when no gptokeyb has -c (NO_MAPPING), commit 7831a70; (B) device_info exports ANALOGSTICKS alias (OpenTTD), commit 337434f. Brief: .superpowers/sdd/.../task-6b-brief.md"
     }
   ],
-  "lastUpdated": "2026-09-28T17:37:14+02:00"
+  "lastUpdated": "2026-09-28T20:32:00+02:00"
 }
