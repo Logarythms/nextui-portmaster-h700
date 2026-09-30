@@ -1,0 +1,31 @@
+name: test-build
+# Manual test builds: the full pak from any branch, as a downloadable workflow
+# artifact instead of a release (e.g. a fix for an issue reporter to try before
+# it ships). Start it from the Actions tab or with
+# `gh workflow run test-build.yml --ref <branch>`, then share the run's link.
+# Same steps as release.yml; the zip is renamed so it can't pass for a release.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: make test
+      - name: Build pak
+        run: make pak
+      - name: Name the test build
+        run: |
+          pak="PORTS.pak-test-${GITHUB_SHA::7}.zip"
+          cp dist/Emus/h700/PORTS.pak.zip "$pak"
+          echo "PAK=$pak" >> "$GITHUB_ENV"
+      - name: Upload pak
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ env.PAK }}
+          archive: false
+          retention-days: 30
+          if-no-files-found: error
