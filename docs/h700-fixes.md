@@ -790,7 +790,7 @@ above: volume is int32 index 4 (byte offset 16) and brightness is int32
 index 1 (byte offset 4), both on NextUI's 0–20 / 0–10 scales — the pre-gate
 guess was wrong, and the shipped shim now reads 16/4.
 
-### 0.5.1 (unreleased)
+### 0.5.1
 
 **Fixes**
 - F66: the pak's on-screen messages ("Starting, please wait...", "Unpacking
