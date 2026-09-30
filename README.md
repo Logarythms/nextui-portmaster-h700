@@ -97,6 +97,7 @@ Confirmed working out of the box on the RG SP:
 - [Road Invaders](https://portmaster.games/detail.html?name=road.invaders) (via the built-in input translator — automatic)
 - [Sonic 1](https://portmaster.games/detail.html?name=sonic.1) (its controls, screen fit and sound are corrected for the RG SP automatically)
 - [Sonic 2](https://portmaster.games/detail.html?name=sonic.2) (its controls, screen fit and sound are corrected for the RG SP automatically)
+- [Sonic 3 A.I.R.](https://portmaster.games/detail.html?name=sonic3air) (needs your own Sonic 3 & Knuckles ROM — see its port page; the library it needs is bundled automatically)
 - [The Starlit Escape](https://portmaster.games/detail.html?name=thestarlitescape) (via the built-in input translator — automatic)
 - [Tunics!](https://portmaster.games/detail.html?name=tunics_pm) (via the built-in input translator — automatic)
 - [UFO 50](https://github.com/JeodC/RHH-Ports/tree/main/ports/released/gamemakerengine/ufo50) (an [RHH port](https://github.com/JeodC/RHH-Ports); first launch patches for ~1.5 hours)
@@ -180,7 +181,7 @@ make pak     # builds dist/Emus/h700/PORTS.pak.zip from pinned, checksum-verifie
 make test    # runs the shell test suite
 ```
 
-The `LD_PRELOAD` shims (input-remap, FMOD-audio, GLES-profile, SDL-audio-init), the sleep watcher and the ALSA suspend-proxy ship prebuilt in `assets/`; rebuilding them (`make shim`) needs Docker.
+The `LD_PRELOAD` shims (input-remap, FMOD-audio, GLES-profile, SDL-audio-init), the sleep watcher and the ALSA suspend-proxy ship prebuilt in `assets/`; rebuilding them (`make shim`) needs Docker. So does the slim libcurl for ports that expect the firmware to provide one; rebuilding it (`make libcurl`) also needs Docker.
 
 ## Fixing games that ignore your buttons
 

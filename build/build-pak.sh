@@ -1968,6 +1968,19 @@ PMEOF
   file "$assembled/lib/gl4es-egl/libEGL.so.1" | grep -q 'ELF 64-bit.*aarch64' \
     || { echo "gl4es-libEGL.so.1 is not an aarch64 shared object" >&2; exit 1; }
 
+  # gt-h700-libcurl: F67 — ports that link libcurl.so.4 and bundle none (Sonic 3
+  # AIR, Doom 3/dhewm3) die in the loader on NextUI-h700, which has no libcurl.
+  # A slim HTTP/HTTPS-only build linked against rc11's own libssl.so.3,
+  # libcrypto.so.3 and zlib, exporting Ubuntu's CURL_OPENSSL_4 symbol version.
+  # Straight into lib/ on purpose (on every port's LD_LIBRARY_PATH; upstream's
+  # files/lib.tar.gz carries no libcurl, so the first-boot unpack cannot
+  # clobber it). Ports that bundle their own libcurl still win: their libs/
+  # comes first. Fail closed on arch (F45 lesson). Built by `make libcurl`;
+  # provenance in assets/libcurl.txt.
+  cp "$ASSETS/libcurl.so.4" "$assembled/lib/libcurl.so.4"
+  file "$assembled/lib/libcurl.so.4" | grep -q 'ELF 64-bit.*aarch64' \
+    || { echo "libcurl.so.4 is not an aarch64 shared object" >&2; exit 1; }
+
   # gt-h700-nxengine-settings: F39 — h700-correct nxengine-evo (Cave Story Evo)
   # controls + resolution. nxengine-evo reads the raw SDL joystick and binds
   # actions to button INDICES (and a resolution INDEX) in settings.dat; the

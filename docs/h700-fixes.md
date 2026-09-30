@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (up to F66) below match the internal numbering used while these were
+Fix IDs (up to F67) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. The numbering has gaps — some IDs are
 reserved or live on other branches until release. A closing section records the ports
@@ -130,6 +130,12 @@ directory so it never depends on what the host image happens to provide.
   exports `GCONV_PATH` there — only on h700, only when the port has not set its
   own, the firmware still has no gconv of its own, and the system glibc is still
   that exact build (a firmware glibc update falls back to today's behaviour).
+- **F67 — Sonic 3 AIR and Doom 3 exit at load: `libcurl.so.4` missing.**
+  Reported in issue #2 (Sonic 3 AIR). Both ports link libcurl and bundle none,
+  expecting the firmware to provide it; NextUI-h700 has none. Fix: ship a slim
+  HTTP/HTTPS-only libcurl built from a pinned curl release against the
+  device's own OpenSSL 3 and zlib — see
+  [its section below](#ports-that-link-libcurl-a-slim-libcurl-built-for-rc11-f67).
 
 ## Roms launcher trigger file (F2)
 
@@ -2243,3 +2249,65 @@ a port's `progressor` only when no copy is there (upstream behavior). Ports
 installed under 0.5.0 or earlier therefore keep their 0.13.0 copy, and their
 own progress screens (such as Celeste's first-launch repack) stay blank until
 that copy is removed.
+
+## Ports that link libcurl: a slim libcurl built for rc11 (F67)
+
+Sonic 3 AIR (issue #2) exited straight back to the menu with
+`./sonic3air_linux: error while loading shared libraries: libcurl.so.4: cannot
+open shared object file`. The port ships only its binary and expects the
+firmware to provide libcurl, as ArkOS, ROCKNIX and the other big CFWs do.
+NextUI-h700 has no libcurl anywhere. Upstream's Doom 3 (dhewm3) links it the
+same way. `LD_TRACE_LOADED_OBJECTS` on the RG SP (rc11) showed `libcurl.so.4`
+as Sonic 3 AIR's only unresolved library.
+
+Sonic 3 AIR uses curl for one thing: the optional download of its remastered
+soundtrack, which the port already bundles. The game carries on if curl can't
+start. A do-nothing stub would therefore get it to launch, but every other
+port's curl features would stay dead, and Ubuntu's own `libcurl4` pulls in
+about 20 more libraries (nghttp2, libssh, LDAP, Kerberos, GnuTLS…) that the
+device lacks.
+
+Fix: the pak ships its own `lib/libcurl.so.4`, built by `make libcurl`
+(`build/libcurl.sh`) from a pinned curl release tarball (version and SHA-256
+in the `Makefile`):
+
+- **HTTP and HTTPS only.** Every other protocol and optional dependency is
+  off. The library needs `libssl.so.3`, `libcrypto.so.3`, `libz.so.1` and
+  glibc, all of which rc11 ships (`libz.so.1` is also in the pak's `lib/`).
+- **Built on Ubuntu 22.04, not the pak's usual bullseye.** rc11's userland is
+  jammy (its `libc.so.6` is byte-identical to jammy's), and bullseye's
+  OpenSSL is 1.1. The base image is pinned by digest. Ubuntu's snapshot
+  archive serves no arm64, so apt itself is not date-pinned; the compiler and
+  header versions are recorded in `assets/libcurl.txt` instead.
+- **Ubuntu's symbol version.** Ports built on Debian or Ubuntu bind libcurl's
+  functions under the version `CURL_OPENSSL_4` (Sonic 3 AIR imports
+  `curl_easy_init`, `curl_easy_setopt`, `curl_easy_perform` and
+  `curl_easy_cleanup` under it); `--enable-versioned-symbols` with the OpenSSL
+  backend produces the same.
+- **rc11's CA bundle.** libcurl ignores `SSL_CERT_FILE`, so the path
+  `/etc/ssl/certs/ca-certificates.crt` is compiled in as the default.
+- **Straight into `lib/`**, which is on every port's `LD_LIBRARY_PATH`, so no
+  launcher changes. A port that bundles its own libcurl (Enigma, F1 Spirit)
+  still loads its own, because the port's `libs/` comes first. Upstream's
+  `files/lib.tar.gz`, unpacked into `lib/` on the first boot after an
+  install, has no libcurl to overwrite it with.
+
+The build script refuses to write the library unless it is aarch64, named
+`libcurl.so.4`, needs exactly the four libraries above, exports the easy API
+under `CURL_OPENSSL_4` and needs no glibc newer than 2.35.
+`tests/test-38-libcurl.sh` checks the committed library (architecture, symbol
+version, no extra dependencies), its provenance against the `Makefile` pins,
+and the staging line.
+
+**Device check (2026-09-30, RG SP, NextUI h700-rc11).** With the pak
+installed by unzip-over, `LD_TRACE_LOADED_OBJECTS` on `sonic3air_linux`
+resolved `libcurl.so.4` from the pak's `lib/` (the committed hash) and
+`libssl.so.3`/`libcrypto.so.3` from the system, with nothing unresolved. An
+HTTPS request through the same library to `sonic3air.org` verified against
+rc11's CA bundle. Sonic 3 AIR (with the Steam `Sonic_Knuckles_wSonic3.bin`)
+launched, found its ROM, and played with working sound and controls.
+
+Known gap: if a later NextUI ships its own libcurl, the pak's copy still wins,
+because the pak's `lib/` comes before the system directory — the same as every
+library the pak ships.
+

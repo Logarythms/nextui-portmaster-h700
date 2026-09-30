@@ -1,5 +1,5 @@
 .POSIX:
-.PHONY: pak test clean shim gl4es-egl
+.PHONY: pak test clean shim gl4es-egl libcurl
 
 pak:
 	sh build/build-pak.sh portmaster
@@ -57,3 +57,17 @@ gl4es-egl:
 	docker pull --platform linux/arm64 debian:bullseye
 	docker run --rm --platform linux/arm64 -v "$$PWD:/repo" -w /repo -e GL4ES_COMMIT=$(GL4ES_COMMIT) -e BULLSEYE_SNAPSHOT=$(BULLSEYE_SNAPSHOT) debian:bullseye sh /repo/build/gl4es-egl.sh
 	file assets/gl4es-libEGL.so.1
+
+# F67: a slim libcurl.so.4 (HTTP/HTTPS only) from a pinned curl release, for
+# ports that link libcurl and bundle none (Sonic 3 AIR, Doom 3). Built in a
+# digest-pinned ubuntu:22.04 arm64 container — NOT the bullseye lane: it links
+# rc11's own jammy libssl.so.3/libcrypto.so.3/zlib (bullseye's OpenSSL is 1.1).
+# Outputs assets/libcurl.so.4 + .txt provenance; commit both. build-pak.sh
+# stages the .so straight into lib/ (on every port's LD_LIBRARY_PATH).
+CURL_VERSION = 8.22.0
+CURL_SHA256 = d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1
+LIBCURL_IMAGE = ubuntu@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02
+
+libcurl:
+	docker run --rm --platform linux/arm64 -v "$$PWD:/repo" -w /repo -e CURL_VERSION=$(CURL_VERSION) -e CURL_SHA256=$(CURL_SHA256) -e LIBCURL_IMAGE=$(LIBCURL_IMAGE) $(LIBCURL_IMAGE) sh /repo/build/libcurl.sh
+	file assets/libcurl.so.4
