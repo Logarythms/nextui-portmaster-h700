@@ -2,8 +2,8 @@
 # pins.sh — pinned upstream URLs + SHA-256 for the h700 PortMaster build.
 # Sourced by build/build-pak.sh. Every download is verified against these.
 
-MP_URL="https://github.com/josegonzalez/minui-presenter/releases/download/0.13.0/minui-presenter-h700-nextui"
-MP_SHA256=6156dfa1032c8729d0bb606eb6d37d23defbcdd41c9ef2888f2e1e1ffc8a2def
+MP_URL="https://github.com/josegonzalez/minui-presenter/releases/download/0.13.4/minui-presenter-h700-nextui"
+MP_SHA256=519d5e900675b1893aa32f5f82515884f0027af88070e66c5e0cb72a394e2f20
 PM_PAK_URL="https://github.com/ben16w/minui-portmaster/releases/download/2.14.0/PORTS.pak.zip"
 PM_PAK_SHA256=969ca07385b40b72c230143e474fb393ce28c1d550ce311db8c97580aa020252   # observed sha, double-download cross-checked (upstream publishes none)
 # Provenance notes (2026-08-28): upstream builds its release zips from a

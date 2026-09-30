@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (up to F65) below match the internal numbering used while these were
+Fix IDs (up to F66) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. The numbering has gaps — some IDs are
 reserved or live on other branches until release. A closing section records the ports
@@ -789,6 +789,14 @@ the F25/F26/F31 input-remap and gptk-keyboard regression is intact
 above: volume is int32 index 4 (byte offset 16) and brightness is int32
 index 1 (byte offset 4), both on NextUI's 0–20 / 0–10 scales — the pre-gate
 guess was wrong, and the shipped shim now reads 16/4.
+
+### 0.5.1 (unreleased)
+
+**Fixes**
+- F66: the pak's on-screen messages ("Starting, please wait...", "Unpacking
+  files, please wait...", "Applying changes, please wait...") show again on
+  NextUI rc10 and later. minui-presenter is now pinned at 0.13.4, which is
+  built against rc11; 0.13.0 died on `GetMute`, a symbol rc10 stopped exporting
 
 ### 0.5.0
 
@@ -2201,3 +2209,37 @@ exactly once and recorded the new map on the rc11 ID, the launcher's mtime
 was untouched; (9) Animal Crossing plays, L2/R2 rotate the camera, sleep and
 resume from power and lid keep sound. Stick devices: host-tested only (no
 hardware), EXPERIMENTAL label kept.
+
+## Pak messages never appeared on NextUI rc10 and later (F66)
+
+The pak shows its progress messages through josegonzalez's
+[minui-presenter](https://github.com/josegonzalez/minui-presenter), pinned at
+its h700-nextui build: "Starting, please wait...", "Unpacking files, please
+wait..." on the first launch after an install or update, "Applying changes,
+please wait..." after the GUI, and "Starting <game>...". NextUI `h700-rc10`
+stopped exporting four settings functions from
+`.system/h700/lib/libmsettings.so`: `GetMute`, `GetMutedBrightness`,
+`GetMutedColortemp` and `GetMutedVolume` became header-only stubs. The 0.13.0
+build imports all four. Symbols bind lazily, so it started, then died on its
+first `GetMute` call with `minui-presenter: symbol lookup error: … undefined
+symbol: GetMute`, which `PORTS.txt` logs for every message. Nothing in
+`launch.sh` waits on a message, so the pak kept working behind a blank
+screen. The worst case was a fresh install's first launch, which unpacks about
+73 MB with no sign of progress.
+
+Fix: pin minui-presenter 0.13.4, the upstream release built against rc11. On
+rc11, `LD_BIND_NOW=1` resolves every symbol 0.13.4 imports (0.13.0 fails on
+`GetMutedVolume`). `tests/test-37-presenter-pin.sh` keeps the pin at 0.13.4 or
+newer.
+
+**Device check (2026-09-30, RG SP, NextUI h700-rc11).** With 0.13.4 in
+`bin/`, the PortMaster GUI showed "Starting, please wait..." and then started
+normally, "Applying changes, please wait..." appeared on exit, and Celeste
+launched and played. Each time the presenter was gone before the next program
+drew, and there was no F14-style repaint wedge.
+
+Known gap: `replace_progressor_binaries` copies `files/minui-presenter` next to
+a port's `progressor` only when no copy is there (upstream behavior). Ports
+installed under 0.5.0 or earlier therefore keep their 0.13.0 copy, and their
+own progress screens (such as Celeste's first-launch repack) stay blank until
+that copy is removed.
