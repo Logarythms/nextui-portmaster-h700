@@ -88,6 +88,7 @@ Confirmed working out of the box on the RG SP:
 - [Dokimon: Quest](https://portmaster.games/detail.html?name=dokimon) (a "GMLive folder not found. Skipping patch." line while it patches on first launch is harmless — the patch still completes)
 - [Doom Engines](https://portmaster.games/detail.html?name=doomengines) (Crispy Doom and GZDoom; the libraries it needs are bundled automatically)
 - [Downwell](https://portmaster.games/detail.html?name=downwell)
+- [Half-Life](https://portmaster.games/detail.html?name=half-life) (needs your own Steam copy: put the contents of its `valve` folder into `Roms/Ports (PORTS)/.ports/Half-Life/valve/` — `.ports` is a hidden folder; without the game files it goes straight back to the menu)
 - [Lasagna Boy Classic](https://portmaster.games/detail.html?name=lasagnaboyclassic) (via the built-in input translator — automatic)
 - [Luanti (Minetest)](https://portmaster.games/detail.html?name=minetest) (the first start of a new world can take a few minutes)
 - [Mina the Hollower](https://portmaster.games/detail.html?name=mina) (its Metal→GLES engine is switched to native OpenGL ES 3 automatically — see below)

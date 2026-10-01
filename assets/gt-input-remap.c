@@ -1315,6 +1315,36 @@ int main(int argc, char **argv) {
 
 static void gt_announce(int final);   /* F54: once-only log, defined with the passthrough block */
 
+/* F68: the one real-symbol lookup every interposer uses. dlsym(RTLD_NEXT)
+ * searches the GLOBAL scope after this preloaded shim, which is where SDL2
+ * lives for nearly every port, and stays the first try so those ports resolve
+ * exactly as before. It cannot see a library the app dlopen'd without
+ * RTLD_GLOBAL, nor that library's dependencies: Half-Life's xash3d launcher
+ * loads libxash.so (and with it libSDL2) that way, every lookup came back
+ * NULL, SDL_Init "failed" without SDL ever running and SDL_PollEvent jumped to
+ * address 0 (device-proven on the RG SP, rc11). Fallback: the copy that is
+ * already loaded, by soname. RTLD_NOLOAD never loads anything new, and dlsym
+ * on that handle searches the library and its own dependencies only, so it
+ * can't find this shim again. The handle is never closed on purpose: it pins
+ * the library so a cached pointer can't dangle. */
+static void *gt_sym_in(const char *const *libs, const char *name) {
+    void *f = dlsym(RTLD_NEXT, name);
+    for (; !f && *libs; libs++) {
+        void *h = dlopen(*libs, RTLD_NOW | RTLD_NOLOAD);
+        if (h) f = dlsym(h, name);
+    }
+    return f;
+}
+static const char *const gt_sdl_libs[] = { "libSDL2-2.0.so.0", NULL };
+static const char *const gt_egl_libs[] = { "libEGL.so.1", "libEGL.so", NULL };
+static void *gt_sdl_sym(const char *name) { return gt_sym_in(gt_sdl_libs, name); }
+static void *gt_egl_sym(const char *name) { return gt_sym_in(gt_egl_libs, name); }
+
+/* F68: an interposer whose real function still can't be found degrades (no
+ * events, no present) instead of calling NULL, and says so once in the log. */
+#define GT_MISSING(name) do { static int gt_warned; if (!gt_warned) { gt_warned = 1; \
+    fprintf(stderr, "gt-input-remap: cannot resolve real %s\n", (name)); } } while (0)
+
 static int gt_debug(void) {
     static int v = -1;
     if (v < 0) {
@@ -1675,17 +1705,19 @@ static void gt_announce(int final) {
 
 int SDL_Init(Uint32 flags) {
     static int (*real)(Uint32);
-    if (!real) real = (int (*)(Uint32))dlsym(RTLD_NEXT, "SDL_Init");
+    if (!real) real = (int (*)(Uint32))gt_sdl_sym("SDL_Init");
     gt_passthrough_on_init(flags);
     gt_announce(0);
+    if (!real) GT_MISSING("SDL_Init");
     return real ? real(flags) : -1;
 }
 
 int SDL_InitSubSystem(Uint32 flags) {
     static int (*real)(Uint32);
-    if (!real) real = (int (*)(Uint32))dlsym(RTLD_NEXT, "SDL_InitSubSystem");
+    if (!real) real = (int (*)(Uint32))gt_sdl_sym("SDL_InitSubSystem");
     gt_passthrough_on_init(flags);
     gt_announce(0);
+    if (!real) GT_MISSING("SDL_InitSubSystem");
     return real ? real(flags) : -1;
 }
 
@@ -1726,10 +1758,10 @@ static void gt_ensure_joystick_open(void) {
     static int (*num_joy)(void);
     static SDL_Joystick *(*joy_open)(int);
     if (!was_init) {
-        was_init = (Uint32 (*)(Uint32))dlsym(RTLD_NEXT, "SDL_WasInit");
-        init_sub = (int (*)(Uint32))dlsym(RTLD_NEXT, "SDL_InitSubSystem");
-        num_joy  = (int (*)(void))dlsym(RTLD_NEXT, "SDL_NumJoysticks");
-        joy_open = (SDL_Joystick *(*)(int))dlsym(RTLD_NEXT, "SDL_JoystickOpen");
+        was_init = (Uint32 (*)(Uint32))gt_sdl_sym("SDL_WasInit");
+        init_sub = (int (*)(Uint32))gt_sdl_sym("SDL_InitSubSystem");
+        num_joy  = (int (*)(void))gt_sdl_sym("SDL_NumJoysticks");
+        joy_open = (SDL_Joystick *(*)(int))gt_sdl_sym("SDL_JoystickOpen");
     }
     if (!was_init || !init_sub || !num_joy || !joy_open) { done = 1; return; }
     if (!was_init(SDL_INIT_VIDEO) && !was_init(SDL_INIT_JOYSTICK))
@@ -1871,7 +1903,7 @@ static int gt_hud_intercept(SDL_Event *ev) {
 static void gt_refresh_keystate(void) {
     static const Uint8 *(*real_gks)(int *);
     if (!real_gks)
-        real_gks = (const Uint8 *(*)(int *))dlsym(RTLD_NEXT, "SDL_GetKeyboardState");
+        real_gks = (const Uint8 *(*)(int *))gt_sdl_sym("SDL_GetKeyboardState");
     if (!real_gks) return;
     int n = 0;
     const Uint8 *real = real_gks(&n);
@@ -1895,7 +1927,7 @@ const Uint8 *SDL_GetKeyboardState(int *numkeys) {
 int SDL_PollEvent(SDL_Event *ev) {
     gt_announce(1);
     static int (*real)(SDL_Event *);
-    if (!real) real = (int (*)(SDL_Event *))dlsym(RTLD_NEXT, "SDL_PollEvent");
+    if (!real) real = (int (*)(SDL_Event *))gt_sdl_sym("SDL_PollEvent");
     gt_ensure_joystick_open();
     int r;
     if (ev && gt_stash_n > 0) {
@@ -1903,6 +1935,9 @@ int SDL_PollEvent(SDL_Event *ev) {
         gt_stash_n--;
         memmove(&gt_stash[0], &gt_stash[1], (size_t)gt_stash_n * sizeof gt_stash[0]);
         r = 1;
+    } else if (!real) {
+        GT_MISSING("SDL_PollEvent");
+        r = 0;
     } else {
         r = real(ev);
         while (r == 1 && gt_hud_intercept(ev)) r = real(ev);  /* swallow Menu */
@@ -1915,7 +1950,7 @@ int SDL_PollEvent(SDL_Event *ev) {
 int SDL_WaitEventTimeout(SDL_Event *ev, int timeout) {
     gt_announce(1);
     static int (*real)(SDL_Event *, int);
-    if (!real) real = (int (*)(SDL_Event *, int))dlsym(RTLD_NEXT, "SDL_WaitEventTimeout");
+    if (!real) real = (int (*)(SDL_Event *, int))gt_sdl_sym("SDL_WaitEventTimeout");
     gt_ensure_joystick_open();
     int r;
     if (ev && gt_stash_n > 0) {
@@ -1923,6 +1958,9 @@ int SDL_WaitEventTimeout(SDL_Event *ev, int timeout) {
         gt_stash_n--;
         memmove(&gt_stash[0], &gt_stash[1], (size_t)gt_stash_n * sizeof gt_stash[0]);
         r = 1;
+    } else if (!real) {
+        GT_MISSING("SDL_WaitEventTimeout");
+        r = 0;
     } else {
         r = real(ev, timeout);
         while (r == 1 && gt_hud_intercept(ev)) r = real(ev, timeout);  /* swallow Menu */
@@ -1975,7 +2013,7 @@ int SDL_WaitEventTimeout(SDL_Event *ev, int timeout) {
  * SDL_GL_GetProcAddress uses SDL's own loader handle for the SDL-created GL
  * context, returning valid pointers whether the driver is GL4ES's libGL or a
  * native libGLESv2, and sidestepping the namespace problem. It is resolved via
- * dlsym(RTLD_NEXT) (SDL2 is loaded after this preloaded shim) so the link stays
+ * gt_sdl_sym (RTLD_NEXT, then the already-loaded SDL2 — F68) so the link stays
  * -ldl-only. eglGetProcAddress + dlsym(RTLD_DEFAULT) remain as fallbacks for a
  * future non-SDL / eglSwapBuffers-only port. */
 static void *(*p_SDL_GL_GetProcAddress)(const char *);
@@ -2057,9 +2095,10 @@ static int gt_gl_resolve(void) {
     static int done;
     if (done) return !gt_gl_dead;
     done = 1;
-    /* SDL2 sits below this preloaded shim, so RTLD_NEXT finds its GL loader;
-     * eglGetProcAddress is a fallback for a future eglSwapBuffers-only port. */
-    p_SDL_GL_GetProcAddress = (void *(*)(const char *))dlsym(RTLD_NEXT, "SDL_GL_GetProcAddress");
+    /* SDL2's own GL loader (gt_sdl_sym also finds an SDL2 the app loaded into a
+     * private scope — F68); eglGetProcAddress is a fallback for a future
+     * eglSwapBuffers-only port. */
+    p_SDL_GL_GetProcAddress = (void *(*)(const char *))gt_sdl_sym("SDL_GL_GetProcAddress");
     p_eglGetProcAddress     = (void *(*)(const char *))dlsym(RTLD_DEFAULT, "eglGetProcAddress");
     int missing = 0;
 #define GT_GL(fp, NAME, ...) do { \
@@ -2434,19 +2473,22 @@ static int gt_in_swap;   /* reentrancy guard for the nested egl call */
 void SDL_GL_SwapWindow(SDL_Window *win) {
     gt_announce(1);
     gt_evdev_ensure();
-    static void (*real)(SDL_Window*); if (!real) real = (void(*)(SDL_Window*))dlsym(RTLD_NEXT, "SDL_GL_SwapWindow");
+    static void (*real)(SDL_Window*); if (!real) real = (void(*)(SDL_Window*))gt_sdl_sym("SDL_GL_SwapWindow");
     if (gt_hud_debug()) { static int once; if (!once) { once = 1;
         fprintf(stderr, "gt-hud: swap path = SDL_GL_SwapWindow\n"); } }
-    gt_in_swap = 1; gt_hud_draw(); real(win); gt_in_swap = 0;
+    gt_in_swap = 1; gt_hud_draw();
+    if (real) real(win); else GT_MISSING("SDL_GL_SwapWindow");
+    gt_in_swap = 0;
 }
 
 unsigned int eglSwapBuffers(void *dpy, void *surf) {
     gt_announce(1);
     gt_evdev_ensure();
-    static unsigned int (*real)(void*,void*); if (!real) real = (unsigned int(*)(void*,void*))dlsym(RTLD_NEXT, "eglSwapBuffers");
+    static unsigned int (*real)(void*,void*); if (!real) real = (unsigned int(*)(void*,void*))gt_egl_sym("eglSwapBuffers");
     if (gt_hud_debug()) { static int once; if (!once) { once = 1;
         fprintf(stderr, "gt-hud: swap path = eglSwapBuffers (nested=%d)\n", gt_in_swap); } }
     if (!gt_in_swap) gt_hud_draw();      /* skip if SDL_GL_SwapWindow already drew */
+    if (!real) { GT_MISSING("eglSwapBuffers"); return 0; }   /* EGL_FALSE */
     return real(dpy, surf);
 }
 
@@ -2485,21 +2527,21 @@ static int gt_sw_resolve(void) {
     static int done;
     if (done) return !gt_sw_dead;
     done = 1;
-    p_SDL_CreateTexture        = (SDL_Texture *(*)(SDL_Renderer*,Uint32,int,int,int))dlsym(RTLD_NEXT, "SDL_CreateTexture");
-    p_SDL_DestroyTexture       = (void (*)(SDL_Texture*))dlsym(RTLD_NEXT, "SDL_DestroyTexture");
-    p_SDL_UpdateTexture        = (int (*)(SDL_Texture*,const SDL_Rect*,const void*,int))dlsym(RTLD_NEXT, "SDL_UpdateTexture");
-    p_SDL_RenderCopy           = (int (*)(SDL_Renderer*,SDL_Texture*,const SDL_Rect*,const SDL_Rect*))dlsym(RTLD_NEXT, "SDL_RenderCopy");
-    p_SDL_SetTextureBlendMode  = (int (*)(SDL_Texture*,SDL_BlendMode))dlsym(RTLD_NEXT, "SDL_SetTextureBlendMode");
-    p_SDL_GetRendererOutputSize= (int (*)(SDL_Renderer*,int*,int*))dlsym(RTLD_NEXT, "SDL_GetRendererOutputSize");
-    p_SDL_RenderGetLogicalSize = (void (*)(SDL_Renderer*,int*,int*))dlsym(RTLD_NEXT, "SDL_RenderGetLogicalSize");
-    p_SDL_RenderSetLogicalSize = (int (*)(SDL_Renderer*,int,int))dlsym(RTLD_NEXT, "SDL_RenderSetLogicalSize");
-    p_SDL_RenderGetScale       = (void (*)(SDL_Renderer*,float*,float*))dlsym(RTLD_NEXT, "SDL_RenderGetScale");
-    p_SDL_RenderSetScale       = (int (*)(SDL_Renderer*,float,float))dlsym(RTLD_NEXT, "SDL_RenderSetScale");
-    p_SDL_RenderGetViewport    = (void (*)(SDL_Renderer*,SDL_Rect*))dlsym(RTLD_NEXT, "SDL_RenderGetViewport");
-    p_SDL_RenderSetViewport    = (int (*)(SDL_Renderer*,const SDL_Rect*))dlsym(RTLD_NEXT, "SDL_RenderSetViewport");
-    p_SDL_RenderGetClipRect    = (void (*)(SDL_Renderer*,SDL_Rect*))dlsym(RTLD_NEXT, "SDL_RenderGetClipRect");
-    p_SDL_RenderSetClipRect    = (int (*)(SDL_Renderer*,const SDL_Rect*))dlsym(RTLD_NEXT, "SDL_RenderSetClipRect");
-    p_SDL_RenderIsClipEnabled  = (SDL_bool (*)(SDL_Renderer*))dlsym(RTLD_NEXT, "SDL_RenderIsClipEnabled");
+    p_SDL_CreateTexture        = (SDL_Texture *(*)(SDL_Renderer*,Uint32,int,int,int))gt_sdl_sym("SDL_CreateTexture");
+    p_SDL_DestroyTexture       = (void (*)(SDL_Texture*))gt_sdl_sym("SDL_DestroyTexture");
+    p_SDL_UpdateTexture        = (int (*)(SDL_Texture*,const SDL_Rect*,const void*,int))gt_sdl_sym("SDL_UpdateTexture");
+    p_SDL_RenderCopy           = (int (*)(SDL_Renderer*,SDL_Texture*,const SDL_Rect*,const SDL_Rect*))gt_sdl_sym("SDL_RenderCopy");
+    p_SDL_SetTextureBlendMode  = (int (*)(SDL_Texture*,SDL_BlendMode))gt_sdl_sym("SDL_SetTextureBlendMode");
+    p_SDL_GetRendererOutputSize= (int (*)(SDL_Renderer*,int*,int*))gt_sdl_sym("SDL_GetRendererOutputSize");
+    p_SDL_RenderGetLogicalSize = (void (*)(SDL_Renderer*,int*,int*))gt_sdl_sym("SDL_RenderGetLogicalSize");
+    p_SDL_RenderSetLogicalSize = (int (*)(SDL_Renderer*,int,int))gt_sdl_sym("SDL_RenderSetLogicalSize");
+    p_SDL_RenderGetScale       = (void (*)(SDL_Renderer*,float*,float*))gt_sdl_sym("SDL_RenderGetScale");
+    p_SDL_RenderSetScale       = (int (*)(SDL_Renderer*,float,float))gt_sdl_sym("SDL_RenderSetScale");
+    p_SDL_RenderGetViewport    = (void (*)(SDL_Renderer*,SDL_Rect*))gt_sdl_sym("SDL_RenderGetViewport");
+    p_SDL_RenderSetViewport    = (int (*)(SDL_Renderer*,const SDL_Rect*))gt_sdl_sym("SDL_RenderSetViewport");
+    p_SDL_RenderGetClipRect    = (void (*)(SDL_Renderer*,SDL_Rect*))gt_sdl_sym("SDL_RenderGetClipRect");
+    p_SDL_RenderSetClipRect    = (int (*)(SDL_Renderer*,const SDL_Rect*))gt_sdl_sym("SDL_RenderSetClipRect");
+    p_SDL_RenderIsClipEnabled  = (SDL_bool (*)(SDL_Renderer*))gt_sdl_sym("SDL_RenderIsClipEnabled");
     if (!p_SDL_CreateTexture || !p_SDL_DestroyTexture || !p_SDL_UpdateTexture ||
         !p_SDL_RenderCopy || !p_SDL_SetTextureBlendMode || !p_SDL_GetRendererOutputSize ||
         !p_SDL_RenderGetLogicalSize || !p_SDL_RenderSetLogicalSize ||
@@ -2575,11 +2617,11 @@ void SDL_RenderPresent(SDL_Renderer *r) {
     gt_announce(1);
     gt_evdev_ensure();
     static void (*real)(SDL_Renderer*);
-    if (!real) real = (void (*)(SDL_Renderer*))dlsym(RTLD_NEXT, "SDL_RenderPresent");
+    if (!real) real = (void (*)(SDL_Renderer*))gt_sdl_sym("SDL_RenderPresent");
     if (gt_hud_debug()) { static int once; if (!once) { once = 1;
         fprintf(stderr, "gt-hud: present path = SDL_RenderPresent\n"); } }
     gt_hud_draw_sw(r);
-    if (real) real(r);
+    if (real) real(r); else GT_MISSING("SDL_RenderPresent");
 }
 
 #endif /* GT_REMAP_TEST */

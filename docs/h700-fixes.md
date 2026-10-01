@@ -8,7 +8,7 @@ the tg5040 family of devices (TrimUI Brick/Smart Pro); the h700 family has a
 thinner system image, a different SDL2 build, and a different GPU driver stack,
 so several of its assumptions don't hold.
 
-Fix IDs (up to F67) below match the internal numbering used while these were
+Fix IDs (up to F68) below match the internal numbering used while these were
 found and verified on real hardware; they're kept here mainly so a diff or an
 issue report can refer to a specific one. The numbering has gaps — some IDs are
 reserved or live on other branches until release. A closing section records the ports
@@ -2310,4 +2310,59 @@ launched, found its ROM, and played with working sound and controls.
 Known gap: if a later NextUI ships its own libcurl, the pak's copy still wins,
 because the pak's `lib/` comes before the system directory — the same as every
 library the pak ships.
+
+## Engines that load SDL2 privately crashed at start (F68)
+
+Half-Life (the `half-life` port, Xash3D FWGS) went straight back to the menu on
+every launch, even with the game files in place. The port writes its own log,
+`Roms/Ports (PORTS)/.ports/Half-Life/log.txt`, and it showed
+`Sys_Warn: SDL_Init failed: ` with an empty reason, the engine falling back to
+dedicated-server mode, then `Crash: signal 11 … at (nil)`.
+
+The port's `xash3d` launcher links only libdl and libc and loads the engine
+with `dlopen("libxash.so", RTLD_NOW)`, without `RTLD_GLOBAL`. `libxash.so` links
+SDL2, so SDL2 lands in that private scope too. The pak preloads
+`gt-input-remap.so` into every port (it carries the HUD, the gptokeyb
+passthrough and the keyboard fallback), so the engine's calls to `SDL_Init`,
+`SDL_PollEvent` and the rest reach the shim first. The shim looked up the real
+functions with `dlsym(RTLD_NEXT, …)`, which searches only the global scope, and
+every lookup returned NULL. `SDL_Init` returned -1 without SDL ever running,
+hence the empty reason, and `SDL_PollEvent` called address 0. This is older than
+0.5: 0.3.0 and 0.4.0 already forwarded `SDL_PollEvent` and `SDL_GL_SwapWindow`
+this way, and F54's `SDL_Init` wrapper only moved the failure earlier.
+
+Fix: every lookup goes through one resolver. It still tries `RTLD_NEXT` first,
+so every port that resolved before resolves exactly as before. Only when that
+returns NULL does it take the copy that is already loaded,
+`dlopen("libSDL2-2.0.so.0", RTLD_NOW | RTLD_NOLOAD)` (for `eglSwapBuffers`,
+`libEGL.so.1` or `libEGL.so`), and look the symbol up there. `RTLD_NOLOAD`
+never loads anything new. A wrapper whose real function still can't be found
+no longer calls NULL: event polls return no events, the present calls are
+skipped, `SDL_Init` returns -1, and the log gets one
+`gt-input-remap: cannot resolve real <name>` line.
+
+`tests/test-39-shim-symbol-lookup.sh` fails if a bare `dlsym(RTLD_NEXT, "…")`
+comes back. `tests/container-sdl-scope-check.sh` (Docker, not part of
+`make test`) loads a fake engine the way Xash3D does, under the preloaded shim
+and against stand-in SDL2 and EGL libraries. Before the fix it reproduced the
+device log (`SDL_Init` -1, then a segfault). Now every call reaches the
+stand-ins, the `RTLD_GLOBAL` control run is unchanged, and with stand-ins the
+fallback can't find either, the shim degrades and logs instead of crashing.
+
+**Device check (2026-10-01, RG SP, NextUI h700-rc11).** Only
+`lib/gt-input-remap.so` was swapped for the F68 build; the Half-Life launcher
+was the unmodified one. Half-Life (current Steam `valve` files) reached the
+menu, started a new game with working controls, toggled the HUD and quit
+cleanly (Mali-G31 GLES2, SDL ALSA audio). Regression runs: BYTEPATH (gptokeyb
+passthrough to `event3`), Sonic 1 (keyboard synthesis, joystick opened) and
+Mina the Hollower (GL HUD) all played as before. No `cannot resolve real` line
+appeared in any of the four logs. Before the fix, putting SDL2 into the global
+scope (`LD_PRELOAD` of the system `libSDL2-2.0.so.0` behind the shim) was the
+one change that let Half-Life start, which is what pinned the cause on the
+shim's lookup.
+
+Known gap: the three port-specific shims (`gt-fmod-audio`, `gt-gles3-profile`,
+`gt-sdl-audio-init`) still use bare `RTLD_NEXT`. They load only for their own
+port classes (FMOD ports, the gothic/machismo engines, Sonic), which load SDL
+the usual way.
 
